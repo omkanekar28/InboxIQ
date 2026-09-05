@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inboxiq"
+version = "0.1.0"
+description = "AI-powered Gmail assistant"
+requires-python = ">=3.13.5"
+
+dependencies = [
+    "pydantic-settings>=2.15.0",
+    "google-api-python-client>=2.198.0",
+    "google-auth-httplib2>=0.4.1",
+    "google-auth-oauthlib>=1.4.1",
+    "db-sqlite3>=0.0.1"
+]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[tool.basedpyright]
+typeCheckingMode = "standard" # or "basic" to relax it further
