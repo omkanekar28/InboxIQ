@@ -104,6 +104,6 @@ def summarize_db(db_path: str, preview_rows: int = 5):
 
 
 if __name__ == "__main__":
-    db_path_arg = "../src/data/inboxiq.db"
+    db_path_arg = "../data/inboxiq.db"
     preview_n = 5
     summarize_db(db_path_arg, preview_n)

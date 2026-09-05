@@ -103,5 +103,41 @@ class Database:
                 email.get("internal_date_ms"),
             ))
 
+    @with_transaction
+    def delete_emails(self, email_ids: list[str]) -> None:
+        """Deletes emails by ID from the database."""
+        if not email_ids:
+            return
+        placeholders = ",".join("?" for _ in email_ids)
+        self.cursor.execute(f"DELETE FROM emails WHERE id IN ({placeholders})", email_ids)
+
+    @with_transaction
+    def update_email_labels(self, email_id: str, labels: list[str]) -> None:
+        """Updates the labels for a given email."""
+        self.cursor.execute(
+            "UPDATE emails SET labels = ? WHERE id = ?",
+            (json.dumps(labels), email_id),
+        )
+
+    def get_latest_email_date_ms(self) -> int | None:
+        """Returns the internal_date_ms of the most recent email in the database."""
+        self.cursor.execute("SELECT MAX(internal_date_ms) FROM emails")
+        row = self.cursor.fetchone()
+        return row[0] if row and row[0] is not None else None
+
+    @with_transaction
+    def set_sync_state(self, key: str, value: str) -> None:
+        """Stores or updates a key-value pair in sync_state."""
+        self.cursor.execute("""
+            INSERT OR REPLACE INTO sync_state (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (key, value))
+
+    def get_sync_state(self, key: str) -> str | None:
+        """Retrieves a value from sync_state by key."""
+        self.cursor.execute("SELECT value FROM sync_state WHERE key = ?", (key,))
+        row = self.cursor.fetchone()
+        return row[0] if row else None
+
 
 db = Database()

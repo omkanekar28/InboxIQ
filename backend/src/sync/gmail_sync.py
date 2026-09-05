@@ -2,12 +2,14 @@ import json
 import os
 import time
 import base64
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from storage import db
 from settings import settings
 from utils import get_logger
@@ -81,14 +83,13 @@ class GmailSync:
 
     def _get_email_details(
         self, 
-        msg_id: str, 
-        format: Literal["full", "metadata"] = "metadata"
+        msg_id: str
     ) -> dict:
         """Fetch and parse full message details for a given message ID."""
         message = (
             self.service.users()
             .messages()
-            .get(userId="me", id=msg_id, format=format)
+            .get(userId="me", id=msg_id)
             .execute()
         )
 
@@ -170,7 +171,7 @@ class GmailSync:
         email_details = []
 
         for message in messages:
-            email_detail = self._get_email_details(message["id"], format="full")
+            email_detail = self._get_email_details(message["id"])
             email_details.append(email_detail)
         
         logger.info(
@@ -178,34 +179,193 @@ class GmailSync:
         )
         return email_details
 
-    def _incremental_sync(self):
-        """Perform incremental sync since last checkpoint, or trigger backfill on first run."""
-        pass
+    def _get_current_history_id(self) -> str | None:
+        """Fetch the current historyId of the mailbox from Gmail profile."""
+        try:
+            profile = self.service.users().getProfile(userId="me").execute()
+            return profile.get("historyId")
+        except Exception as e:
+            logger.warning(f"Could not fetch mailbox historyId from profile: {e}")
+            return None
 
-    def sync_emails(self, first_boot: bool) -> None:
-        """Sync emails from Gmail to local database."""
-        if first_boot:
+    def _fallback_date_sync(self) -> None:
+        """
+        Fallback sync when historyId is expired (>7 days old).
+        Queries Gmail for messages after the latest known message date in SQLite.
+        """
+        logger.info("Running date-based fallback sync...")
+        latest_ms = db.get_latest_email_date_ms()
+        query = None
+        if latest_ms:
+            # Buffer by 1 hour (3600 seconds) to avoid missing boundary emails
+            after_epoch_sec = max(0, (latest_ms // 1000) - 3600)
+            query = f"after:{after_epoch_sec}"
+            logger.info(f"Syncing messages with query '{query}'...")
+        else:
+            logger.info("No prior messages in database. Falling back to recent backfill...")
+
+        page_token = None
+        new_message_ids: list[str] = []
+        while True:
+            results = (
+                self.service.users()
+                .messages()
+                .list(userId="me", pageToken=page_token, q=query, maxResults=500)
+                .execute()
+            )
+            batch = results.get("messages", [])
+            if not batch:
+                break
+            new_message_ids.extend([m["id"] for m in batch if "id" in m])
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+
+        logger.info(f"Found {len(new_message_ids)} messages in date-range fallback.")
+        if new_message_ids:
+            new_emails = [self._get_email_details(mid) for mid in new_message_ids]
+            db.ingest_emails(new_emails)
+
+        # Update checkpoint to current mailbox state
+        fresh_history_id = self._get_current_history_id()
+        if fresh_history_id:
+            db.set_sync_state("gmail_last_history_id", str(fresh_history_id))
+        db.set_sync_state("last_sync_at", datetime.now(timezone.utc).isoformat())
+
+    def _incremental_sync(self, start_history_id: str) -> None:
+        """
+        Perform incremental sync using Gmail's users.history.list.
+        Captures new messages, deletions, and label changes since start_history_id.
+        """
+        logger.info(f"Starting incremental sync from historyId {start_history_id}...")
+        page_token = None
+        new_history_id = start_history_id
+
+        messages_added_ids: set[str] = set()
+        messages_deleted_ids: set[str] = set()
+        labels_updated: dict[str, list[str]] = {}  # msg_id -> list of current labels
+
+        try:
+            while True:
+                results = (
+                    self.service.users()
+                    .history()
+                    .list(
+                        userId="me",
+                        startHistoryId=start_history_id,
+                        pageToken=page_token,
+                        historyTypes=["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"],
+                    )
+                    .execute()
+                )
+
+                new_history_id = results.get("historyId", new_history_id)
+                history_records = results.get("history", [])
+
+                for record in history_records:
+                    # 1. New messages
+                    for added in record.get("messagesAdded", []):
+                        msg = added.get("message", {})
+                        if "id" in msg:
+                            messages_added_ids.add(msg["id"])
+
+                    # 2. Deleted messages
+                    for deleted in record.get("messagesDeleted", []):
+                        msg = deleted.get("message", {})
+                        if "id" in msg:
+                            messages_deleted_ids.add(msg["id"])
+
+                    # 3. Label updates
+                    for label_event in record.get("labelsAdded", []) + record.get("labelsRemoved", []):
+                        msg = label_event.get("message", {})
+                        msg_id = msg.get("id")
+                        if msg_id and "labelIds" in msg:
+                            labels_updated[msg_id] = msg["labelIds"]
+
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+
+        except HttpError as error:
+            # 404 indicates historyId is invalid / expired (> 7 days)
+            if error.resp.status == 404:
+                logger.warning(
+                    f"historyId '{start_history_id}' has expired on Gmail servers (404). "
+                    "Falling back to date-range sync."
+                )
+                self._fallback_date_sync()
+                return
+            else:
+                raise
+
+        # Remove deleted IDs from newly added set
+        messages_added_ids -= messages_deleted_ids
+
+        # Ingest newly added emails
+        if messages_added_ids:
+            logger.info(f"Fetching details for {len(messages_added_ids)} new emails...")
+            new_emails = [self._get_email_details(mid) for mid in messages_added_ids]
+            db.ingest_emails(new_emails)
+
+        # Delete removed emails
+        if messages_deleted_ids:
+            logger.info(f"Removing {len(messages_deleted_ids)} deleted emails from local database...")
+            db.delete_emails(list(messages_deleted_ids))
+
+        # Update labels on modified emails (excluding newly added ones which already have fresh labels)
+        for msg_id, labels in labels_updated.items():
+            if msg_id not in messages_added_ids and msg_id not in messages_deleted_ids:
+                db.update_email_labels(msg_id, labels)
+
+        # Update sync_state checkpoints
+        if new_history_id:
+            db.set_sync_state("gmail_last_history_id", str(new_history_id))
+        db.set_sync_state("last_sync_at", datetime.now(timezone.utc).isoformat())
+
+        logger.info(
+            f"Incremental sync finished: {len(messages_added_ids)} added, "
+            f"{len(messages_deleted_ids)} deleted, {len(labels_updated)} labels updated. "
+            f"New historyId: {new_history_id}"
+        )
+
+    def sync_emails(self) -> None:
+        """Sync emails from Gmail to local database and update sync_state."""
+        last_history_id = db.get_sync_state("gmail_last_history_id")
+
+        if last_history_id is None:
             logger.info(
                 f"First boot detected. Fetching first "
                 f"{settings.GMAIL_SYNC_MAX_RECENT_EMAILS} emails..."
             )
-            email_details = self._fetch_all_emails()
+            # 1. Grab current mailbox historyId before/during backfill
+            current_history_id = self._get_current_history_id()
 
+            # 2. Fetch and ingest emails
+            email_details = self._fetch_all_emails()
             logger.info("Saving emails to database...")
             db.ingest_emails(email_details)
+
+            # 3. Store baseline historyId and timestamp in sync_state
+            if current_history_id:
+                db.set_sync_state("gmail_last_history_id", str(current_history_id))
+                logger.info(f"Stored initial historyId '{current_history_id}' in sync_state.")
+            else:
+                logger.warning("No historyId retrieved; subsequent sync may trigger full backfill.")
+            db.set_sync_state("last_sync_at", datetime.now(timezone.utc).isoformat())
         else:
-            logger.info("Incremental sync not implemented yet.")
-        
+            logger.info(f"Existing historyId found ({last_history_id}). Running incremental sync...")
+            self._incremental_sync(last_history_id)
+
         logger.info("Sync complete!")
 
 
 # FOR DEBUGGING
-# if __name__ == "__main__":
-#     gmail_sync = GmailSync()
+if __name__ == "__main__":
+    gmail_sync = GmailSync()
 
-#     ## Full flow (WILL OVERWRITE EXISTING DATABASE!!!)
-#     # gmail_sync.sync_emails(first_boot=True)
+    ## Full flow (WILL OVERWRITE EXISTING DATABASE!!!)
+    gmail_sync.sync_emails()
 
-#     ## Partial flow (Skips DB ingestion part)
-#     emails = gmail_sync._fetch_all_emails()
-#     print(json.dumps(emails, indent=4))
+    ## Partial flow (Skips DB ingestion part)
+    # emails = gmail_sync._fetch_all_emails()
+    # print(json.dumps(emails, indent=4))

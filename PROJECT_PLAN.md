@@ -100,7 +100,6 @@ InboxIQ/
 │   │   └── graph.py                # LangGraph wiring of the above
 │   ├── sync/
 │   │   ├── gmail_sync.py          # first-boot backfill + incremental history sync
-│   │   ├── calendar_sync.py       # calendar invite sync
 │   │   └── embed.py                 # sentence-transformers embedding pipeline
 │   ├── storage/
 │   │   ├── db.py                   # SQLite schema + queries
