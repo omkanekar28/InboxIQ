@@ -21,3 +21,7 @@ include = ["backend*"]
 
 [tool.basedpyright]
 typeCheckingMode = "standard" # or "basic" to relax it further
+
+[tool.pytest.ini_options]
+pythonpath = ["backend/src"]
+testpaths = ["backend/tests"]

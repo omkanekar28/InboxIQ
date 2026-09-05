@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     # Gmail Sync
     GMAIL_SYNC_SCOPES: list[str] = ["https://www.googleapis.com/auth/gmail.readonly"]
     # GMAIL_SYNC_MAX_RECENT_EMAILS: int = 1000
-    GMAIL_SYNC_MAX_RECENT_EMAILS: int = 5    # TODO: set to 1000 for production
+    GMAIL_SYNC_MAX_RECENT_EMAILS: int = 5    # TODO: set to a higher value for production
     GMAIL_SYNC_CREDENTIALS_FILEPATH: str = "credentials.json"
     GMAIL_SYNC_TOKEN_FILEPATH: str = "token.json"
 

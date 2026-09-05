@@ -1,10 +1,8 @@
-import json
 import os
 import time
 import base64
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -360,12 +358,12 @@ class GmailSync:
 
 
 # FOR DEBUGGING
-if __name__ == "__main__":
-    gmail_sync = GmailSync()
+# if __name__ == "__main__":
+#     gmail_sync = GmailSync()
 
-    ## Full flow (WILL OVERWRITE EXISTING DATABASE!!!)
-    gmail_sync.sync_emails()
+#     ## Full flow (WILL OVERWRITE EXISTING DATABASE!!!)
+#     gmail_sync.sync_emails()
 
-    ## Partial flow (Skips DB ingestion part)
-    # emails = gmail_sync._fetch_all_emails()
-    # print(json.dumps(emails, indent=4))
+#     ## Partial flow (Skips DB ingestion part)
+#     # emails = gmail_sync._fetch_all_emails()
+#     # print(json.dumps(emails, indent=4))

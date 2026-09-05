@@ -17,18 +17,18 @@ import sys
 from pathlib import Path
 
 
-def summarize_db(db_path: str, preview_rows: int = 5):
-    db_path = Path(db_path)
-    if not db_path.exists():
-        print(f"❌ File not found: {db_path}")
+def summarize_db(db_path: str | Path, preview_rows: int = 5):
+    path = Path(db_path)
+    if not path.exists():
+        print(f"❌ File not found: {path}")
         sys.exit(1)
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    print(f"\n📂 Database: {db_path}")
-    print(f"📏 Size: {db_path.stat().st_size / 1024:.2f} KB")
+    print(f"\n📂 Database: {path}")
+    print(f"📏 Size: {path.stat().st_size / 1024:.2f} KB")
     print("=" * 70)
 
     # Get all tables
