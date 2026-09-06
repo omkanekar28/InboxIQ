@@ -1,6 +1,7 @@
 import os
 import time
 import base64
+from typing import Literal
 from datetime import datetime, timezone
 from pathlib import Path
 from google.auth.transport.requests import Request
@@ -81,15 +82,34 @@ class GmailSync:
 
     def _get_email_details(
         self, 
-        msg_id: str
+        msg_id: str, 
+        format: Literal["full", "metadata"] = "metadata",
+        metadata_headers: list[str] | None = ["Subject", "From", "To", "Date"],
     ) -> dict:
         """Fetch and parse full message details for a given message ID."""
-        message = (
-            self.service.users()
-            .messages()
-            .get(userId="me", id=msg_id)
-            .execute()
-        )
+        if format == "metadata":
+            message = (
+                self.service.users()
+                .messages()
+                .get(
+                    userId="me", 
+                    id=msg_id, 
+                    format=format,
+                    metadataHeaders=metadata_headers,
+                )
+                .execute()
+            )
+        else:
+            message = (
+                self.service.users()
+                .messages()
+                .get(
+                    userId="me", 
+                    id=msg_id, 
+                    format=format,
+                )
+                .execute()
+            )
 
         payload = message.get("payload", {})
         headers = payload.get("headers", [])
@@ -103,7 +123,9 @@ class GmailSync:
         internal_date = message.get("internalDate")  # epoch timestamp in ms
 
         # 2. Extract Body (handles both single-part and multipart emails)
-        text_body = self._extract_body(payload)
+        text_body = ""
+        if format == "full":
+            text_body = self._extract_body(payload)
 
         return {
             "id": message.get("id"),
@@ -115,7 +137,8 @@ class GmailSync:
             "to": recipient,
             "date": date_str,
             "internal_date_ms": int(internal_date) if internal_date else None,
-            "text_body": text_body or message.get("snippet", ""),
+            "text_body": text_body,
+            "is_full": 1 if format == "full" else 0,
         }
 
     def _fetch_all_emails(self) -> list[dict]:
@@ -125,7 +148,10 @@ class GmailSync:
         page_token = None
         page = 0
 
-        logger.info(f"Fetching up to {settings.GMAIL_SYNC_MAX_RECENT_EMAILS} recent message IDs...")
+        logger.info(
+            f"Fetching up to {settings.GMAIL_SYNC_MAX_RECENT_EMAILS} recent message IDs "
+            f"format={settings.GMAIL_SYNC_EMAIL_FORMAT}"
+        )
         
         # Paginate through messages up to GMAIL_SYNC_MAX_RECENT_EMAILS
         while len(messages) < settings.GMAIL_SYNC_MAX_RECENT_EMAILS:
@@ -169,7 +195,11 @@ class GmailSync:
         email_details = []
 
         for message in messages:
-            email_detail = self._get_email_details(message["id"])
+            email_detail = self._get_email_details(
+                msg_id=message["id"], 
+                format=settings.GMAIL_SYNC_EMAIL_FORMAT,
+                metadata_headers=settings.GMAIL_SYNC_METADATA_HEADERS,
+            )
             email_details.append(email_detail)
         
         logger.info(
@@ -221,7 +251,11 @@ class GmailSync:
 
         logger.info(f"Found {len(new_message_ids)} messages in date-range fallback.")
         if new_message_ids:
-            new_emails = [self._get_email_details(mid) for mid in new_message_ids]
+            new_emails = [self._get_email_details(
+                msg_id=mid, 
+                format=settings.GMAIL_SYNC_EMAIL_FORMAT,
+                metadata_headers=settings.GMAIL_SYNC_METADATA_HEADERS,
+            ) for mid in new_message_ids]
             db.ingest_emails(new_emails)
 
         # Update checkpoint to current mailbox state
@@ -302,7 +336,11 @@ class GmailSync:
         # Ingest newly added emails
         if messages_added_ids:
             logger.info(f"Fetching details for {len(messages_added_ids)} new emails...")
-            new_emails = [self._get_email_details(mid) for mid in messages_added_ids]
+            new_emails = [self._get_email_details(
+                msg_id=mid, 
+                format=settings.GMAIL_SYNC_EMAIL_FORMAT,
+                metadata_headers=settings.GMAIL_SYNC_METADATA_HEADERS,
+            ) for mid in messages_added_ids]
             db.ingest_emails(new_emails)
 
         # Delete removed emails

@@ -64,6 +64,7 @@ class Database:
                 labels TEXT,
                 date TEXT,
                 internal_date_ms INTEGER,
+                is_full INTEGER NOT NULL CHECK (is_full IN (0, 1)),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -88,8 +89,8 @@ class Database:
 
             self.cursor.execute("""
                 INSERT OR REPLACE INTO emails (
-                    id, thread_id, sender, recipient, subject, snippet, body, labels, date, internal_date_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, thread_id, sender, recipient, subject, snippet, body, labels, date, internal_date_ms, is_full
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 email["id"],
                 email["thread_id"],
@@ -101,6 +102,7 @@ class Database:
                 labels,
                 email.get("date", ""),
                 email.get("internal_date_ms"),
+                email.get("is_full", 1 if email.get("body") else 0),
             ))
 
     @with_transaction
