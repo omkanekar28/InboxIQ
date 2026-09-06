@@ -1,0 +1,2 @@
+1. Create the 2 tools.
+2. Update PROJECT_PLAN + README + tests + pyproject.toml according to latest code.
