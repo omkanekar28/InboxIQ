@@ -1,9 +1,15 @@
+"""
+Single source of truth for database operations.
+"""
+
+
 import json
+from datetime import datetime, timezone
 import os
 import sqlite3
 from functools import wraps
-from typing import Any, Callable
-from utils import get_logger
+from typing import Any, Callable, Literal
+from utils import get_logger, parse_date_from_str
 
 logger = get_logger(name=__name__, log_file="storage.log")
 
@@ -32,10 +38,15 @@ class Database:
     def __init__(
         self, 
         store_dir: str = "../data", 
-        sqlite_filename: str = "inboxiq.db"
+        sqlite_filename: str = "inboxiq.db", 
+        search_email_fields: tuple[str, ...] = ("id", "thread_id", "sender", "subject", "snippet", "date"),
+        email_thread_fields: tuple[str, ...] = ("id", "thread_id", "sender", "recipient", "subject", "date", "body"),
     ) -> None:
         """Initialises the database"""
         logger.info("Initialising database...")
+        self.search_email_fields = search_email_fields
+        self.email_thread_fields = email_thread_fields
+
         os.makedirs(store_dir, exist_ok=True)
         db_path = os.path.join(store_dir, sqlite_filename)
 
@@ -66,7 +77,7 @@ class Database:
                 labels TEXT,
                 date TEXT,
                 internal_date_ms INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE INDEX IF NOT EXISTS idx_emails_thread_id ON emails (thread_id);
@@ -78,14 +89,14 @@ class Database:
                 id TEXT PRIMARY KEY,
                 thread_id TEXT NOT NULL,
                 body TEXT,
-                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fetched_at TIMESTAMP DEFAULT (datetime('now', '+5 hours', '+30 minutes')),
                 FOREIGN KEY (id) REFERENCES emails(id)
             );
 
             CREATE TABLE IF NOT EXISTS sync_state (
                 key TEXT PRIMARY KEY,
                 value TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
         """)
 
@@ -157,7 +168,7 @@ class Database:
         """
         self.cursor.execute("""
             INSERT OR REPLACE INTO emails_content (id, thread_id, body, fetched_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, (datetime('now', '+5 hours', '+30 minutes')))
         """, (email_id, thread_id, body))
 
     @with_transaction
@@ -165,7 +176,7 @@ class Database:
         """Stores or updates a key-value pair in sync_state."""
         self.cursor.execute("""
             INSERT OR REPLACE INTO sync_state (key, value, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, (datetime('now', '+5 hours', '+30 minutes')))
         """, (key, value))
 
     def get_sync_state(self, key: str) -> str | None:
@@ -173,3 +184,107 @@ class Database:
         self.cursor.execute("SELECT value FROM sync_state WHERE key = ?", (key,))
         row = self.cursor.fetchone()
         return row[0] if row else None
+    
+    # |-- THESE WILL BE USED BY TOOLS --|
+    def search_emails_by_keyword(self, keyword: str) -> list[dict]:
+        """Search emails by looking for keyword in subject and snippet."""
+        self.cursor.execute(f"""
+            SELECT {', '.join(self.search_email_fields)}
+            FROM emails
+            WHERE subject LIKE ? OR snippet LIKE ?
+        """, (f"%{keyword}%", f"%{keyword}%"))
+        rows = self.cursor.fetchall()
+        result = []
+        for row in rows:
+            result.append({
+                key: value
+                for key, value in zip(self.search_email_fields, row)
+            })
+        return result
+    
+    def search_emails_by_sender_or_recepient(
+        self,
+        keyword: str,
+        target_col: Literal["sender", "recipient"],
+    ) -> list[dict]:
+        """Search emails by looking for sender in the sender column."""
+        self.cursor.execute(f"""
+            SELECT {', '.join(self.search_email_fields)}
+            FROM emails
+            WHERE {target_col} LIKE ?
+        """, (f"%{keyword}%",))
+        rows = self.cursor.fetchall()
+        result = []
+        for row in rows:
+            result.append({
+                key: value
+                for key, value in zip(self.search_email_fields, row)
+            })
+        return result
+
+    def search_emails_by_date_range(
+        self,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict]:
+        """Search emails within an optional date range (inclusive on both ends).
+
+        Filters on internal_date_ms (Unix epoch milliseconds as set by Gmail),
+        which is more reliable than the RFC-2822 'date' header string.
+        date_from is treated as the start of that day (00:00:00 UTC);
+        date_to is treated as the end of that day (23:59:59.999 UTC).
+        """
+        conditions = []
+        params: list = []
+
+        if date_from:
+            parsed_from = parse_date_from_str(date_from)          # "YYYY-MM-DD"
+            dt_from = datetime.strptime(parsed_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            conditions.append("internal_date_ms >= ?")
+            params.append(int(dt_from.timestamp() * 1000))
+
+        if date_to:
+            parsed_to = parse_date_from_str(date_to)              # "YYYY-MM-DD"
+            dt_to = datetime.strptime(parsed_to, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, microsecond=999000, tzinfo=timezone.utc
+            )
+            conditions.append("internal_date_ms <= ?")
+            params.append(int(dt_to.timestamp() * 1000))
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        self.cursor.execute(f"""
+            SELECT {', '.join(self.search_email_fields)}
+            FROM emails
+            {where_clause}
+        """, params)
+        rows = self.cursor.fetchall()
+        return [{key: value for key, value in zip(self.search_email_fields, row)} for row in rows]
+
+    def search_emails_by_label(self, label: str) -> list[dict]:
+        """Search emails whose labels JSON contains the given label string."""
+        self.cursor.execute(f"""
+            SELECT {', '.join(self.search_email_fields)}
+            FROM emails
+            WHERE labels LIKE ?
+        """, (f"%{label}%",))
+        rows = self.cursor.fetchall()
+        return [{key: value for key, value in zip(self.search_email_fields, row)} for row in rows]
+
+
+# FOR DEBUGGING
+# if __name__ == "__main__":
+#     from settings import settings
+#     db = Database(
+#         store_dir=settings.TEST_DIR,
+#         sqlite_filename=settings.TEST_DB_SQLITE_FILENAME,
+#         search_email_fields=settings.SEARCH_EMAIL_FIELDS,
+#         email_thread_fields=settings.EMAIL_THREAD_FIELDS,
+#     )
+
+#     print(json.dumps(db.search_emails_by_keyword("AI"), indent=4))
+#     # print(json.dumps(db.search_emails_by_sender_or_recepient("Indeed", "sender"), indent=4))
+#     # print(json.dumps(db.search_emails_by_sender_or_recepient("AI Course", "recipient"), indent=4))
+#     # print(json.dumps(db.search_emails_by_date_range("2026-09-11", "2026-09-12"), indent=4))
+#     # print(json.dumps(db.search_emails_by_label("INBOX"), indent=4))
+    
+#     # Add more function calls here that you want to test

@@ -1,3 +1,8 @@
+"""
+All sync related operations will be here.
+"""
+
+
 import os
 import time
 import base64
@@ -401,7 +406,7 @@ class GmailSync:
             current_history_id = self._get_current_history_id()
 
             # 2. Fetch and ingest email metadata
-            email_details = self._fetch_all_emails()
+            email_details = self._fetch_all_emails(max_recent_emails=max_recent_emails)
             logger.info("Saving emails to database...")
             self.db.ingest_emails(email_details)
 
@@ -424,12 +429,12 @@ class GmailSync:
 #     from settings import settings
 #     db = Database(
 #         store_dir=settings.TEST_DIR, 
-#         sqlite_filename="inboxiq.test.db"
+#         sqlite_filename=settings.TEST_DB_SQLITE_FILENAME
 #     )
 #     gmail_sync = GmailSync(db)
 
 #     ## Full flow
-#     gmail_sync.sync_emails()
+#     gmail_sync.sync_emails(max_recent_emails=settings.GMAIL_SYNC_MAX_RECENT_EMAILS)
 
 #     ## Partial flow (Skips DB ingestion part)
 #     # emails = gmail_sync._fetch_all_emails()
