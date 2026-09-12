@@ -186,6 +186,32 @@ class Database:
         return row[0] if row else None
     
     # |-- USED BY TOOLS --|
+    def get_email_thread(self, thread_id: str) -> dict:
+        """Fetch all emails in a thread, including cached body text.
+
+        JOINs emails with emails_content so the body field is available.
+        Returns a dict with the thread_id and a list of email dicts ordered
+        oldest-first (natural reading order).
+        """
+        # Build the SELECT list: body comes from emails_content, rest from emails
+        select_fields = ", ".join(
+            "ec.body" if f == "body" else f"e.{f}"
+            for f in self.email_thread_fields
+        )
+        self.cursor.execute(f"""
+            SELECT {select_fields}
+            FROM emails e
+            LEFT JOIN emails_content ec ON e.id = ec.id
+            WHERE e.thread_id = ?
+            ORDER BY e.internal_date_ms ASC
+        """, (thread_id,))
+        rows = self.cursor.fetchall()
+        emails = [
+            {key: value for key, value in zip(self.email_thread_fields, row)}
+            for row in rows
+        ]
+        return {"thread_id": thread_id, "emails": emails}
+
     def search_emails(
         self,
         keyword: str | None = None,
