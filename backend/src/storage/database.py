@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import os
 import sqlite3
 from functools import wraps
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 from utils import get_logger, parse_date_from_str
 
 logger = get_logger(name=__name__, log_file="storage.log")
@@ -185,88 +185,64 @@ class Database:
         row = self.cursor.fetchone()
         return row[0] if row else None
     
-    # |-- THESE WILL BE USED BY TOOLS --|
-    def search_emails_by_keyword(self, keyword: str) -> list[dict]:
-        """Search emails by looking for keyword in subject and snippet."""
-        self.cursor.execute(f"""
-            SELECT {', '.join(self.search_email_fields)}
-            FROM emails
-            WHERE subject LIKE ? OR snippet LIKE ?
-        """, (f"%{keyword}%", f"%{keyword}%"))
-        rows = self.cursor.fetchall()
-        result = []
-        for row in rows:
-            result.append({
-                key: value
-                for key, value in zip(self.search_email_fields, row)
-            })
-        return result
-    
-    def search_emails_by_sender_or_recepient(
+    # |-- USED BY TOOLS --|
+    def search_emails(
         self,
-        keyword: str,
-        target_col: Literal["sender", "recipient"],
-    ) -> list[dict]:
-        """Search emails by looking for sender in the sender column."""
-        self.cursor.execute(f"""
-            SELECT {', '.join(self.search_email_fields)}
-            FROM emails
-            WHERE {target_col} LIKE ?
-        """, (f"%{keyword}%",))
-        rows = self.cursor.fetchall()
-        result = []
-        for row in rows:
-            result.append({
-                key: value
-                for key, value in zip(self.search_email_fields, row)
-            })
-        return result
-
-    def search_emails_by_date_range(
-        self,
+        keyword: str | None = None,
+        sender: str | None = None,
+        recipient: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        label: str | None = None,
+        limit: int = 50,
     ) -> list[dict]:
-        """Search emails within an optional date range (inclusive on both ends).
+        """Search emails with any combination of filters in a single SQL query.
 
-        Filters on internal_date_ms (Unix epoch milliseconds as set by Gmail),
-        which is more reliable than the RFC-2822 'date' header string.
-        date_from is treated as the start of that day (00:00:00 UTC);
-        date_to is treated as the end of that day (23:59:59.999 UTC).
+        All supplied arguments are combined with AND — each extra argument
+        narrows the result set rather than producing a separate one.
+        Returns at most `limit` rows ordered newest-first.
         """
-        conditions = []
+        conditions: list[str] = []
         params: list = []
 
+        if keyword:
+            conditions.append("(subject LIKE ? OR snippet LIKE ?)")
+            params.extend([f"%{keyword}%", f"%{keyword}%"])
+
+        if sender:
+            conditions.append("sender LIKE ?")
+            params.append(f"%{sender}%")
+
+        if recipient:
+            conditions.append("recipient LIKE ?")
+            params.append(f"%{recipient}%")
+
         if date_from:
-            parsed_from = parse_date_from_str(date_from)          # "YYYY-MM-DD"
+            parsed_from = parse_date_from_str(date_from)
             dt_from = datetime.strptime(parsed_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             conditions.append("internal_date_ms >= ?")
             params.append(int(dt_from.timestamp() * 1000))
 
         if date_to:
-            parsed_to = parse_date_from_str(date_to)              # "YYYY-MM-DD"
+            parsed_to = parse_date_from_str(date_to)
             dt_to = datetime.strptime(parsed_to, "%Y-%m-%d").replace(
                 hour=23, minute=59, second=59, microsecond=999000, tzinfo=timezone.utc
             )
             conditions.append("internal_date_ms <= ?")
             params.append(int(dt_to.timestamp() * 1000))
 
+        if label:
+            conditions.append("labels LIKE ?")
+            params.append(f"%{label}%")
+
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         self.cursor.execute(f"""
             SELECT {', '.join(self.search_email_fields)}
             FROM emails
             {where_clause}
-        """, params)
-        rows = self.cursor.fetchall()
-        return [{key: value for key, value in zip(self.search_email_fields, row)} for row in rows]
-
-    def search_emails_by_label(self, label: str) -> list[dict]:
-        """Search emails whose labels JSON contains the given label string."""
-        self.cursor.execute(f"""
-            SELECT {', '.join(self.search_email_fields)}
-            FROM emails
-            WHERE labels LIKE ?
-        """, (f"%{label}%",))
+            ORDER BY internal_date_ms DESC
+            LIMIT ?
+        """, params + [limit])
         rows = self.cursor.fetchall()
         return [{key: value for key, value in zip(self.search_email_fields, row)} for row in rows]
 
@@ -281,10 +257,12 @@ class Database:
 #         email_thread_fields=settings.EMAIL_THREAD_FIELDS,
 #     )
 
-#     print(json.dumps(db.search_emails_by_keyword("AI"), indent=4))
-#     # print(json.dumps(db.search_emails_by_sender_or_recepient("Indeed", "sender"), indent=4))
-#     # print(json.dumps(db.search_emails_by_sender_or_recepient("AI Course", "recipient"), indent=4))
-#     # print(json.dumps(db.search_emails_by_date_range("2026-09-11", "2026-09-12"), indent=4))
-#     # print(json.dumps(db.search_emails_by_label("INBOX"), indent=4))
-    
-#     # Add more function calls here that you want to test
+#     print(json.dumps(db.search_emails(
+#         keyword="AI", 
+#         sender="Google", 
+#         recipient="me",
+#         date_from="2026-01-01",
+#         date_to="2026-12-31",
+#         label="inbox",
+#         limit=10
+#     ), indent=4))
