@@ -67,3 +67,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Llama Cpp Binaries
+llama-cpp

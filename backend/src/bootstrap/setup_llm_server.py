@@ -1,0 +1,200 @@
+import os
+import requests
+import zipfile
+import tempfile
+import subprocess
+from pathlib import Path
+from typing import Optional, Any
+from tqdm import tqdm
+from utils import get_logger
+
+logger = get_logger(__name__)
+
+
+def install_llama_runtime(
+    url: str,
+    extract_dir: str | Path,
+    progress_callback: Optional[Any] = None,
+    show_progress: bool = True,
+) -> Path | None:
+    """Install the llama runtime if it is not already installed."""
+
+    try:
+        extract_dir = Path(extract_dir)
+        runtime_filepath = extract_dir / "llama-server.exe"
+
+        # Already installed
+        if runtime_filepath.exists():
+            logger.info(
+                f"Llama runtime is already installed at: {runtime_filepath}"
+            )
+            os.environ["LLM_SERVER_BINARY"] = str(runtime_filepath)
+            return runtime_filepath
+
+        logger.info(
+            f"Installing llama runtime from {url} "
+            f"to {extract_dir}..."
+        )
+
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_zip_path = Path(temp_dir) / "llama.zip"
+
+            # Download
+            logger.info(f"Downloading from {url}...")
+
+            with requests.get(url, stream=True, timeout=(10, 60)) as response:
+                response.raise_for_status()
+
+                total_size = int(
+                    response.headers.get("content-length", 0)
+                )
+
+                downloaded = 0
+                last_logged = 0
+                log_step = 10 * 1024 * 1024
+
+                with temp_zip_path.open("wb") as f:
+                    iterator = response.iter_content(chunk_size=64 * 1024)
+
+                    if show_progress:
+                        iterator = tqdm(
+                            iterator,
+                            total=total_size,
+                            unit="B",
+                            unit_scale=True,
+                            desc="Downloading llama runtime",
+                        )
+
+                    for chunk in iterator:
+                        if not chunk:
+                            continue
+
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        if progress_callback:
+                            try:
+                                progress_callback(
+                                    downloaded,
+                                    total_size,
+                                )
+                            except Exception:
+                                pass
+
+                        if (
+                            not show_progress
+                            and (
+                                downloaded - last_logged >= log_step
+                                or (
+                                    total_size
+                                    and downloaded == total_size
+                                )
+                            )
+                        ):
+                            last_logged = downloaded
+
+                            if total_size > 0:
+                                logger.info(
+                                    f"Downloaded "
+                                    f"{downloaded / (1024 * 1024):.1f}/"
+                                    f"{total_size / (1024 * 1024):.1f} MB "
+                                    f"({(downloaded / total_size) * 100:.0f}%)"
+                                )
+                            else:
+                                logger.info(
+                                    f"Downloaded "
+                                    f"{downloaded / (1024 * 1024):.1f} MB"
+                                )
+
+            # Extract
+            logger.info("Extracting runtime archive...")
+
+            with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+                zip_ref.extractall(extract_dir)
+
+        logger.info(f"Runtime installed to {extract_dir}")
+
+        os.environ["LLM_SERVER_BINARY"] = str(runtime_filepath)
+
+        return runtime_filepath
+
+    except Exception as e:
+        logger.error(f"Installation failed: {e}")
+        raise
+
+
+def start_llama_server(
+    llama_server_filepath: str,
+    model_filepath: str,
+    port: int = 8000,
+    context_window_size: int = 4096,
+    n_batch: int = 512,
+    n_threads: int = 4,
+) -> None:
+    """Starts the llama-cpp server with the given model and port."""
+    try:
+        logger.info("Starting llama-cpp server...")
+        subprocess.Popen(
+            [
+                llama_server_filepath,
+                "-m",
+                model_filepath,
+                "-c",
+                str(context_window_size),
+                "-n",
+                str(n_batch),
+                "--threads",
+                str(n_threads),
+                "--port",
+                str(port),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info("Llama-cpp server started.")
+    except Exception as e:
+        logger.error(f"Failed to start llama-cpp server: {e}")
+        raise
+
+
+def stop_llama_server():
+    try:
+        logger.info("Stopping llama-cpp server...")
+
+        subprocess.run(
+            ["cmd.exe", "/c", "taskkill", "/F", "/IM", "llama-server.exe"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        logger.info("Llama-cpp server stopped.")
+
+    except Exception as e:
+        logger.error(f"Failed to stop llama-cpp server: {e}")
+        raise
+
+# FOR DEBUGGING
+# if __name__ == "__main__":
+#     from settings import settings
+#     from pathlib import Path
+
+#     install_llama_runtime(
+#         url=settings.LLAMA_CPP_BINARIES_URL,
+#         extract_dir=Path(settings.LLAMA_CPP_BINARIES_STORE_DIR),
+#     )
+
+#     start_llama_server(
+#         llama_server_filepath=os.path.join(
+#             settings.LLAMA_CPP_BINARIES_STORE_DIR, "llama-server.exe"
+#         ), 
+#         model_filepath=os.path.join(settings.MODEL_STORE_DIR, "LFM2.5-230M-Q4_K_M.gguf"),
+#         port=settings.LLAMA_CPP_SERVER_PORT_NO,
+#         context_window_size=settings.LLAMA_CPP_SERVER_CONTEXT_WINDOW_SIZE,
+#         n_batch=settings.LLAMA_CPP_SERVER_N_BATCH,
+#         n_threads=settings.LLAMA_CPP_SERVER_N_THREADS,
+#     )
+
+#     stop_llama_server()

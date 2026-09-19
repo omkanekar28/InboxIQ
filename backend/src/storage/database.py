@@ -11,7 +11,7 @@ from functools import wraps
 from typing import Any, Callable
 from utils import get_logger, parse_date_from_str
 
-logger = get_logger(name=__name__, log_file="storage.log")
+logger = get_logger(name=__name__)
 
 
 def with_transaction(func: Callable) -> Callable:

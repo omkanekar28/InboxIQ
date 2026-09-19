@@ -8,7 +8,6 @@ import time
 import base64
 from typing import Literal
 from datetime import datetime, timezone
-from pathlib import Path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -17,10 +16,7 @@ from googleapiclient.errors import HttpError
 from storage import Database
 from utils import get_logger
 
-logger = get_logger(
-    name=Path(__file__).stem,
-    log_file="sync.log",
-)
+logger = get_logger(name=__name__)
 
 
 class GmailSync:
