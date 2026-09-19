@@ -1,39 +1,42 @@
 # InboxIQ (Local Email Agent)
 
-A fully local, CPU-only agentic assistant that answers natural-language questions about your Gmail history — e.g. *"Summarize all mails I sent to xyz in the past 3 months"* or *"List all interviews I was invited to this year"* — without sending any data to the cloud.
+A local, privacy-first agentic assistant that answers natural-language questions about your Gmail history — e.g. *"Summarize all mails I sent to xyz in the past 3 months"* or *"List all interviews I was invited to this year"* — without sending any data to the cloud.
 
-Everything in this stack is free, open source, and runs offline after first setup.
+Runs locally on your machine with automatic **GPU acceleration** (NVIDIA CUDA) and seamless **CPU fallback**, supporting both lightweight and balanced local models. Everything in this stack is free, open source, and runs offline after initial setup.
 
 ---
 
 ## 1. Goals
 
-- **Local-first**: no data leaves the machine; no paid APIs.
-- **Low latency, CPU-only**: usable on a laptop without a GPU.
-- **Accurate**: tool-call-grounded answers, not hallucinated summaries.
-- **Zero-friction install**: a non-technical user should be able to run one setup step and start using it — no `.env` editing, no Docker, no manual Python environment setup.
+- **Local-first**: No data leaves your machine; zero cloud API subscriptions or external LLM tokens required.
+- **Hardware-adaptive**: Automatically detects and leverages NVIDIA GPUs (CUDA) via `-ngl -1` offload, or falls back to multi-threaded CPU inference on any standard laptop.
+- **Dual-model architecture**:
+  - **Balanced**: `LFM2.5-2.6B-Q4_K_M` (agentic reasoning, tool calling, 128K context window).
+  - **Lightweight**: `LFM2.5-230M-Q4_K_M` (fast iteration, ultra-low resource consumption).
+- **Accurate & Grounded**: Answers are strictly backed by deterministic tool execution against indexed local data, eliminating hallucinations.
+- **Zero-friction install**: Designed to bundle cleanly without requiring manual `.env` file editing, Docker containers, or Python environment setup for end users.
 
 ## 2. Non-goals (for now)
 
-- Sending/deleting/modifying emails (read-only scopes only).
-- Multi-user / hosted deployment.
-- Support for providers other than Gmail (may extend later).
+- Sending, deleting, or modifying emails (read-only scopes strictly enforced).
+- Multi-user or hosted cloud deployment.
+- Support for email providers other than Gmail (may extend to Outlook/IMAP later).
 
 ---
 
 ## 3. Tech Stack
 
-| Layer | Choice | Why |
+| Layer | Choice | Details & Rationale |
 |---|---|---|
-| LLM (planner + responder) | **LFM2.5-2.6B**, GGUF quantized (Q4_K_M or QAD-Q4_0) | Agentic-tuned, 128K context, native tool calling, fast on CPU |
-| LLM runtime | **llama.cpp** (server mode) | CPU-optimized, no GPU needed, bundleable as a static binary |
-| Metadata store | **SQLite** | Stores email metadata (sender, recipient, date, label, thread_id, subject, snippet); queried directly for search |
-| Orchestration | **LangGraph** | Router → tool-call → aggregation → response graph |
-| API layer | **FastAPI** | Serves the agent locally; also the base for an MCP server wrapper |
-| Auth | **Google OAuth2 (installed-app / PKCE flow)** | No client secret needed to keep private; standard for CLI/local tools |
-| Packaging | **PyInstaller/Nuitka** + bundled `llama.cpp` binary | Single executable per OS, no Python/Docker required by end user |
-
-> Note: All search — keyword/metadata filtering (date range, sender, label, subject/snippet text) — happens directly in SQLite via the two tools (`search_emails`, `get_email_thread`).
+| **LLM Models** | **Liquid AI LFM2.5** (GGUF Q4_K_M) | `2.6B` (balanced, agentic-tuned) or `230M` (lightweight, rapid iteration) |
+| **LLM Runtime** | **llama.cpp** (`llama-server.exe`, b11050) | Auto-downloads prebuilt Windows binary; supports CUDA 13.4 with full layer offload (`-ngl -1`) or CPU (`-ngl 0`) |
+| **Configuration** | **Pydantic Settings** (`pydantic-settings`) | Type-safe settings with environment variable overrides and sensible defaults in `settings.py` |
+| **Local Store** | **SQLite** (`database.py`) | Indexes `emails` metadata and caches full thread bodies in `emails_content` |
+| **Sync & Auth** | **Google OAuth2 (Desktop App Flow)** | Secure PKCE/refresh token auth; full initial backfill + incremental sync using Gmail `historyId` |
+| **Agent Orchestration** | **LangGraph / Python** (Planned) | Query classifier → router → tool execution → aggregator → responder graph |
+| **API Layer** | **FastAPI** (Planned) | Serves the agent locally and hosts frontend static assets |
+| **UI** | **React / Vite** (Planned) | Clean desktop-style chat interface |
+| **Packaging** | **PyInstaller / Nuitka** (Planned) | Bundles backend, static frontend, and `llama.cpp` runtime into a native installer |
 
 ---
 
@@ -41,201 +44,186 @@ Everything in this stack is free, open source, and runs offline after first setu
 
 ```
                     ┌───────────────────────┐
- User query ──────► │  Query Classifier     │  (rule-based first; LLM fallback)
+ User query ──────► │  Query Classifier     │  (Rule-based fast path; LLM fallback)
                     │  date_range /         │
                     │  content_summary /    │
                     │  count_list /         │
                     │  thread_lookup        │
                     └───────────┬───────────┘
-                              ▼
+                                │
+                                ▼
                     ┌───────────────────────┐
-                    │   Router Node (LLM)   │  decides tool(s) + args
-                    └──────────┬────────────┘
-                              ▼
+                    │   Router Node (LLM)   │  Selects tool(s) & arguments
+                    └───────────┬───────────┘
+                                │
+                                ▼
                     ┌───────────────────────┐
-                    │  Tool-Call Node(s)    │  deterministic code
-                    │  (SQLite + Gmail API) │
-                    └─────────┬─────────────┘
-                              ▼
+                    │  Tool-Call Node(s)    │  Deterministic local search
+                    │  (SQLite + Gmail API) │  (search_emails, get_email_thread)
+                    └───────────┬───────────┘
+                                │
+                                ▼
                     ┌───────────────────────┐
-                    │  Aggregation Node     │  merge/dedupe/truncate
-                    │  (deterministic code) │
-                    └─────────┬─────────────┘
-                              ▼
+                    │  Aggregation Node     │  Merge, deduplicate, truncate
+                    │  (Deterministic code) │
+                    └───────────┬───────────┘
+                                │
+                                ▼
                     ┌───────────────────────┐
-                    │  Response Node (LLM)  │  writes final answer
-                    └─────────┬─────────────┘
-                              ▼
-                         Final Answer
+                    │  Response Node (LLM)  │  Generates final synthesis
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                           Final Answer
 ```
 
-Only the **Router** and **Response** nodes call the LLM. Classification, tool execution, and aggregation are plain Python — this keeps latency down and reduces hallucination surface.
+Only the **Router** and **Response** nodes communicate with the local LLM server. Query classification, database filtering, tool dispatch, and deduplication run as pure Python logic to maintain low latency and prevent hallucinations.
 
 ---
 
-## 5. Data Sync (Gmail → local store)
+## 5. Data Sync Architecture
 
-- **First boot**: full backfill — paginate all messages via Gmail API, extract metadata (sender, recipient, date, label, subject, snippet) into SQLite.
-- **Every subsequent boot**: incremental sync using Gmail's `users.history.list` with the last stored `historyId` (captures new mail, label changes, deletions — not just new sends).
-- **Fallback**: if `historyId` has expired (Gmail expires history after ~7 days of inactivity), fall back to a date-range re-sync from the last known message date, de-duped by `message_id`.
-- Store `last_history_id` and `last_sync_at` in a `sync_state` table.
+Implemented in `sync/gmail_sync.py`:
+
+1. **Initial Sync (First Boot)**:
+   - Authenticates via OAuth2 (`token.json` / `credentials.json`).
+   - Paginates all messages via Gmail API (`users.messages.list`).
+   - Extracts metadata: `id`, `thread_id`, `sender`, `recipient`, `subject`, `snippet`, `labels`, `date`, and `internal_date_ms`.
+   - Batch inserts records into the SQLite `emails` table.
+   - Records the latest `historyId` in the `sync_state` table.
+2. **Incremental Sync (Subsequent Runs)**:
+   - Queries `users.history.list` starting from the stored `historyId`.
+   - Captures added messages, label updates, and message deletions.
+   - Updates the database transactionally.
+3. **On-Demand Body Fetching**:
+   - Message bodies are **not** downloaded in bulk during sync (saving gigabytes of bandwidth and disk).
+   - When a thread is queried via `get_email_thread()`, bodies are fetched from Gmail and cached locally in `emails_content` for immediate reuse.
 
 ---
 
-## 6. Repo Structure (proposed)
+## 6. Current Repository Structure
 
 ```
 InboxIQ/
 ├── backend/
-│   ├── agent/
-│   │   ├── classifier.py        # rule-based + optional LLM query classification
-│   │   ├── router.py             # LLM router node
-│   │   ├── tools.py               # tool implementations (search_emails, etc.)
-│   │   ├── aggregator.py          # merge/dedupe tool outputs
-│   │   ├── responder.py           # LLM response node
-│   │   └── graph.py                # LangGraph wiring of the above
-│   ├── sync/
-│   │   └── gmail_sync.py          # first-boot backfill + incremental history sync
-│   ├── storage/
-│   │   └── db.py                   # SQLite schema + queries
-│   ├── llm/
-│   │   └── llamacpp_client.py      # wrapper around local llama.cpp server calls
-│   ├── api/
-│   │   ├── server.py                # FastAPI app, /query endpoint, serves ../../frontend/dist as static files
-│   │   └── mcp_server.py             # MCP wrapper exposing the same tools
-│   ├── setup_wizard/
-│   │   ├── wizard_server.py          # local web page for first-run OAuth + config
-│   │   └── static/                    # minimal HTML/JS for the wizard page
-│   ├── eval/
-│   │   └── eval_queries.json         # hand-written test queries + expected answers
-│   └── requirements.txt
-├── frontend/                        # React app (built in Lovable), exported + checked in here
 │   ├── src/
-│   ├── package.json
-│   └── dist/                          # production build output, served by FastAPI — gitignored
-├── packaging/
-│   ├── build.spec                    # PyInstaller spec (bundles backend)
-│   └── bundle_llamacpp.sh            # script to fetch/compile llama.cpp binary for bundling
-├── models/                            # gitignored — GGUF model downloaded on first run
-└── README.md
+│   │   ├── agent/
+│   │   │   ├── __init__.py
+│   │   │   ├── llm.py                 # [IMPLEMENTED] Local llama-cpp HTTP client, process hooks, latency logger
+│   │   │   ├── tools.py               # [IMPLEMENTED] search_emails & get_email_thread tool interfaces
+│   │   │   ├── classifier.py          # [PLANNED] Rule-based / LLM query classifier
+│   │   │   ├── router.py              # [PLANNED] Router node emitting tool calls
+│   │   │   ├── aggregator.py          # [PLANNED] Tool output formatting and deduplication
+│   │   │   ├── responder.py           # [PLANNED] Final synthesis node
+│   │   │   └── graph.py               # [PLANNED] LangGraph state graph definition
+│   │   ├── bootstrap/
+│   │   │   ├── __init__.py
+│   │   │   ├── setup_models.py        # [IMPLEMENTED] Auto-downloader for HuggingFace GGUF models
+│   │   │   └── setup_llm_server.py    # [IMPLEMENTED] GPU detector (ctypes/smi), llama.cpp downloader & runner
+│   │   ├── storage/
+│   │   │   ├── __init__.py
+│   │   │   └── database.py            # [IMPLEMENTED] SQLite schema, indexes, transaction decorator, search queries
+│   │   ├── sync/
+│   │   │   ├── __init__.py
+│   │   │   └── gmail_sync.py          # [IMPLEMENTED] OAuth2 flow, full sync, history sync, body caching
+│   │   ├── utils/
+│   │   │   ├── __init__.py
+│   │   │   ├── datetime_functions.py  # [IMPLEMENTED] RFC 2822 / ISO date parser with IST/UTC handling
+│   │   │   ├── file_utils.py          # [IMPLEMENTED] Streaming file downloader with tqdm progress
+│   │   │   └── logging_setup.py       # [IMPLEMENTED] App-wide logging setup
+│   │   ├── api/
+│   │   │   ├── .gitkeep
+│   │   │   ├── server.py              # [PLANNED] FastAPI backend application
+│   │   │   └── mcp_server.py          # [PLANNED] Model Context Protocol server adapter
+│   │   ├── setup_wizard/
+│   │   │   └── static/.gitkeep        # [PLANNED] First-run local onboarding web interface
+│   │   ├── eval/
+│   │   │   └── .gitkeep               # [PLANNED] Evaluation benchmark queries & test harness
+│   │   ├── settings.py                # [IMPLEMENTED] Central Pydantic BaseSettings
+│   │   └── main.py                    # [IN PROGRESS] Top-level application entry point
+│   ├── scripts/
+│   │   └── sqlite_summary.py          # [IMPLEMENTED] Developer utility to inspect DB table counts & schema
+│   ├── tests/
+│   │   ├── agent/test_tools.py        # [STUB] Tool tests
+│   │   ├── storage/test_sqlite_db.py  # [STUB] Database query tests
+│   │   └── sync/test_gmail_sync.py    # [STUB] Gmail sync & parser tests
+│   ├── data/                          # [GENERATED] SQLite database files (inboxiq.db)
+│   ├── models/                        # [GENERATED] Hugging Face GGUF model files
+│   ├── llama-cpp/                     # [GENERATED] Extracted llama.cpp server binaries & DLLs
+│   └── logs/                          # [GENERATED] Application runtime logs
+├── frontend/                          # [PLANNED] React frontend application
+├── packaging/                         # [PLANNED] PyInstaller specs & desktop bundler scripts
+├── pyproject.toml                     # Build definition & dependency specifications
+├── README.md
+└── PROJECT_PLAN.md
 ```
 
 ---
 
-## 7. Tool Schemas
+## 7. Tool Specifications
 
-The agent has exactly two tools:
+Tools exposed to the agent in `agent/tools.py`:
 
 ```python
 def search_emails(
-    query: str | None = None,       # keyword match against subject/snippet (SQLite LIKE/FTS5)
-    sender: str | None = None,       # filter: email FROM this address/name
-    recipient: str | None = None,    # filter: email SENT TO this address
-    date_from: str | None = None,    # ISO date, inclusive lower bound
-    date_to: str | None = None,      # ISO date, inclusive upper bound
-    label: str | None = None,        # Gmail label (system or custom); excludes SPAM/TRASH by default
-    limit: int = 50,
-) -> list[dict]:  # light metadata only: sender, recipient, subject, snippet, date, thread_id
-                  # — no full body
+    keyword: str | None = None,     # Case-insensitive substring search in subject or snippet
+    sender: str | None = None,      # Partial match against sender address/name
+    recipient: str | None = None,   # Partial match against recipient address
+    date_from: str | None = None,   # Inclusive lower date bound (parsed flexibly)
+    date_to: str | None = None,     # Inclusive upper date bound (parsed flexibly)
+    label: str | None = None,       # Gmail label filter (e.g. 'INBOX', 'UNREAD', 'STARRED')
+    limit: int = 50,                # Max results returned (ordered newest-first)
+) -> list[dict]:
+    """Queries indexed email metadata from SQLite; does not load full body text."""
 
-def get_email_thread(thread_id: str) -> dict:  # full thread/body content, called selectively
-                                                 # on whichever results from search_emails
-                                                 # the agent decides are relevant
+def get_email_thread(
+    thread_id: str                  # Gmail thread identifier
+) -> dict:
+    """Returns thread metadata and all messages with full body text (cached locally)."""
 ```
 
-`search_emails` is a single SQLite query against indexed columns (sender, recipient, date, label) plus keyword matching on subject/snippet — no vector index involved. `get_email_thread` is only called on the subset of results the Router decides actually need full content, keeping context small and cheap.
+---
 
-Keep schemas flat and minimal — a 2.6B model's tool-call reliability degrades faster than a larger model's on deeply nested/optional-heavy schemas.
+## 8. Development & Implementation Roadmap
+
+### Phase 1: Core Foundation (COMPLETED)
+- [x] **Settings & Configuration**: Centralized settings via `settings.py` for URLs, ports, context sizes, and batch parameters.
+- [x] **Data Access Layer**: SQLite database schema (`emails`, `emails_content`, `sync_state`) with indexed search fields and transaction decorators.
+- [x] **Gmail Sync Engine**: OAuth2 desktop authentication, bulk message ingestion, incremental history sync via `historyId`, and on-demand body caching.
+- [x] **Model Bootstrap**: Automatic download and verification of GGUF models (`LFM2.5-2.6B` and `LFM2.5-230M`).
+- [x] **Runtime & Hardware Auto-Detection**: Detection of NVIDIA GPUs via direct `ctypes` CUDA driver hooks (`cuInit`/`cuDeviceGetCount`) and `nvidia-smi` fallback; automated download of CUDA 13.4 or CPU `llama.cpp` releases with dynamic `-ngl -1` / `0` parameterization.
+- [x] **LLM Client & Process Management**: Background `llama-server.exe` launch, health check polling, OpenAI-compatible `/v1/chat/completions` client, and latency tracking.
+- [x] **Tool Definitions**: Implemented `search_emails` and `get_email_thread` linked directly to database and sync caching.
+
+### Phase 2: Agent Graph & Orchestration (NEXT UP)
+- [ ] **Query Classifier (`agent/classifier.py`)**: Rule-based regex/intent classifier (`count_list`, `content_summary`, `date_range`, `thread_lookup`) to constrain prompting.
+- [ ] **Router Node (`agent/router.py`)**: Prompt design instructing LFM2.5 to generate structured tool calls.
+- [ ] **Aggregator Node (`agent/aggregator.py`)**: Deduplication and formatting of SQLite results before response generation.
+- [ ] **Response Node (`agent/responder.py`)**: Grounded answer generation using tool context.
+- [ ] **LangGraph Integration (`agent/graph.py`)**: End-to-end graph state machine coordinating nodes and tool dispatches.
+
+### Phase 3: Testing & Evaluation
+- [ ] Implement unit tests for `storage/database.py`, `sync/gmail_sync.py`, and `agent/tools.py`.
+- [ ] Create `eval/eval_queries.json` with a representative suite of test queries against real inbox structures.
+- [ ] Validate accuracy and benchmark latency between balanced (`2.6B`) and lightweight (`230M`) models on GPU vs CPU.
+
+### Phase 4: Local Server & API
+- [ ] Build FastAPI server (`api/server.py`) exposing `/query`, `/sync`, and health endpoints.
+- [ ] Optional: Add Model Context Protocol (`api/mcp_server.py`) interface to expose InboxIQ tools to external LLM clients.
+
+### Phase 5: Frontend & User Onboarding
+- [ ] Build React UI (desktop-tailored chat interface with citation chips and thread preview).
+- [ ] Implement first-run setup wizard (`setup_wizard/`) for browser-based OAuth consent and model initialization.
+
+### Phase 6: Packaging & Distribution
+- [ ] Package backend and static frontend with PyInstaller or Nuitka.
+- [ ] Bundle prebuilt `llama-server` runtime and setup scripts into a standalone executable.
 
 ---
 
-## 8. Query Classification (Phase detail)
+## 9. Future Extensions
 
-Rule-based first pass (regex/keyword), LLM fallback only for ambiguous cases:
-
-| Pattern | Type | Router behavior |
-|---|---|---|
-| "how many", "count" | `count_list` | Single tool call, format count in code, may skip LLM response pass entirely |
-| "list", "which" | `count_list` | Tool call + bullet-list formatting |
-| "summarize", "summary" | `content_summary` | Tool call(s) + `get_email_thread` on top results + prose response |
-| explicit date phrases without summary intent | `date_range` | Narrow tool call, minimal response formatting |
-
-This constrains the Router LLM's prompt per query type instead of using one large prompt to handle every case at once — smaller, more specific prompts are more reliable at this model size.
-
----
-
-## 9. Build Phases
-
-1. **Data access layer** — Gmail OAuth, SQLite schema, sync logic (Section 5)
-2. **Tool layer** — implement and unit-test `tools.py` against real data, independent of the LLM
-3. **Agent orchestration** — LangGraph graph wiring, query classifier, prompt design for Router/Response nodes
-4. **CPU serving** — llama.cpp server integration, GGUF variant benchmarking (QAD-Q4_0 vs Q4_K_M)
-5. **Accuracy hardening** — date parsing, sender/recipient disambiguation, dedup logic, `eval_queries.json` regression suite
-6. **Packaging & distribution** (see below)
-
----
-
-## 10. Packaging & Distribution Plan (Phase 6)
-
-Goal: a user downloads one file per OS and runs it — no Python, no Docker, no manual config editing.
-
-1. **Bundle the app**: PyInstaller (or Nuitka for better performance) compiles the FastAPI app + agent code into a single native executable per platform.
-2. **Bundle the LLM runtime**: compile/include a static `llama.cpp` server binary inside the package.
-3. **Model download on first run**: on first launch, auto-download the GGUF model file from Hugging Face into `~/.local-email-agent/models/` with a progress indicator — same pattern as `ollama run` pulling a model on first use.
-4. **Setup wizard instead of `.env`**: first launch opens a local web page (`localhost:PORT`, auto-opened in the default browser) served by `wizard_server.py`. It walks the user through:
-   - "Connect Gmail" → standard Google OAuth consent screen (PKCE flow, no exposed client secret)
-   - Writes the resulting token + any preferences to `~/.local-email-agent/config.json` automatically
-5. **OAuth client**: register one Google Cloud OAuth client for the project and embed the public client ID in the binary (installed-app flow doesn't require the secret to stay private) — the same approach tools like `gh` and `rclone` use, so users never create their own Google Cloud project.
-6. **Distribution**: package as `Setup.exe` (Windows), `.dmg` (macOS), `.AppImage` (Linux). Double-click → wizard runs once → tray icon / local web UI for ongoing use.
-
-Sequencing note: build and validate the agent with a normal Python + local llama.cpp server setup first (Phases 1–5), then invest in the installer experience once core logic and accuracy are solid — packaging a half-finished agent wastes the effort.
-
----
-
-## 11. Testing & Evaluation
-
-### 11.1 Automated Tests
-
-Use **pytest** as the primary automated testing framework. Tests should be developed alongside each feature rather than added only at the end.
-
-Repo structure:
-
-```text
-tests/
-├── agent/
-│   ├── test_classifier.py
-│   ├── test_tools.py
-│   └── test_aggregator.py
-├── sync/
-│   └── test_gmail_sync.py
-├── storage/
-│   ├── test_db.py
-│   └── test_vector_store.py
-└── integration/
-    └── test_agent_flow.py
-```
-
-Testing principles:
-
-- Every new behavior should have corresponding pytest coverage.
-- Every bug discovered should result in a regression test before/alongside the fix.
-- Prioritize deterministic components: SQLite queries, Gmail tools, classification, filtering, deduplication, aggregation, and sync logic.
-- Mock external Gmail API calls in unit tests; do not require a real Google account for the normal test suite.
-- Keep LLM-dependent tests limited to integration/behavioral tests; avoid asserting exact wording of LLM responses.
-- Run the full pytest suite before merging changes.
-- Maintain a simple test matrix/checklist as features are added so important edge cases are not forgotten.
-
-### 11.2 Evaluation
-
-Maintain `eval/eval_queries.json` — a hand-written set of ~20–30 queries against your own real inbox with known correct answers (message counts, specific senders, date ranges). Re-run after any change to prompts, tool schemas, or the classifier. This is the primary signal for whether accuracy is improving, since model benchmarks won't reflect your actual inbox structure.
-
-Pytest verifies that individual components and system behaviors work correctly; `eval_queries.json` verifies that the complete agent produces correct answers for realistic inbox questions.
-
----
-
-## 12. Open Items / Future Extensions
-
-- Multi-account support
-- Attachments search
-- Outlook/other providers
-- Background "always-on" digest mode (e.g. daily summary) — noted as a good fit for this model class per Liquid AI's own positioning, but out of scope for v1
+- Multi-account Gmail switching.
+- Attachments metadata indexing and local search.
+- Support for other email providers (Outlook / IMAP).
+- Background recurring email digests (e.g. daily executive brief).
