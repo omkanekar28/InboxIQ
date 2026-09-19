@@ -1,7 +1,7 @@
 """Settings for the application."""
 
 from pydantic_settings import BaseSettings
-from typing import Literal
+from typing import Literal, Optional
 
 
 class Settings(BaseSettings):
@@ -59,12 +59,14 @@ class Settings(BaseSettings):
     MODEL_STORE_DIR: str = "../models"
 
     # Llama-Cpp Server
-    LLAMA_CPP_BINARIES_URL: str = "https://github.com/ggml-org/llama.cpp/releases/download/b10708/llama-b10708-bin-win-cpu-x64.zip"
+    LLAMA_CPP_CPU_BINARIES_URL: str = "https://github.com/ggml-org/llama.cpp/releases/download/b11050/llama-b11050-bin-win-cpu-x64.zip"
+    LLAMA_CPP_CUDA_BINARIES_URL: str = "https://github.com/ggml-org/llama.cpp/releases/download/b11050/llama-b11050-bin-win-cuda-13.4-x64.zip"
     LLAMA_CPP_BINARIES_STORE_DIR: str = "../llama-cpp"
     LLAMA_CPP_SERVER_PORT_NO: int = 8001
     LLAMA_CPP_SERVER_CONTEXT_WINDOW_SIZE: int = 4096
     LLAMA_CPP_SERVER_N_BATCH: int = 512
     LLAMA_CPP_SERVER_N_THREADS: int = 4
+    LLAMA_CPP_SERVER_N_GPU_LAYERS: Optional[int] = None
 
 
 settings = Settings()

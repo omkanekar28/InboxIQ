@@ -13,6 +13,7 @@ from bootstrap.setup_llm_server import (
     install_llama_runtime,
     start_llama_server,
     stop_llama_server,
+    is_gpu_available,
 )
 
 logger = get_logger(__name__)
@@ -43,6 +44,7 @@ class LLM:
         self._base_url: str = f"http://127.0.0.1:{self._port}"
         self._server_startup_timeout: int = server_startup_timeout
         self._ready: bool = False
+        self._has_gpu: bool = is_gpu_available()
 
     def setup(self) -> None:
         """Download both GGUF models and install the llama-cpp runtime."""
@@ -53,9 +55,18 @@ class LLM:
             models_store_dir=settings.MODEL_STORE_DIR,
         )
 
-        logger.info("LLM.setup() — installing llama-cpp runtime...")
+        runtime_url = (
+            settings.LLAMA_CPP_CUDA_BINARIES_URL
+            if self._has_gpu
+            else settings.LLAMA_CPP_CPU_BINARIES_URL
+        )
+        logger.info(
+            "LLM.setup() — installing llama-cpp runtime (GPU available: %s, url: %s)...",
+            self._has_gpu,
+            runtime_url,
+        )
         install_llama_runtime(
-            url=settings.LLAMA_CPP_BINARIES_URL,
+            url=runtime_url,
             extract_dir=settings.LLAMA_CPP_BINARIES_STORE_DIR,
         )
         logger.info("LLM.setup() — done.")
@@ -68,10 +79,18 @@ class LLM:
             Path(settings.LLAMA_CPP_BINARIES_STORE_DIR) / "llama-server.exe"
         )
 
+        n_gpu_layers = (
+            settings.LLAMA_CPP_SERVER_N_GPU_LAYERS
+            if settings.LLAMA_CPP_SERVER_N_GPU_LAYERS is not None
+            else (-1 if self._has_gpu else 0)
+        )
+
         logger.info(
-            "LLM.start() — launching server with model=%s on port=%d",
+            "LLM.start() — launching server with model=%s on port=%d (GPU=%s, n_gpu_layers=%d)",
             model_filename,
             self._port,
+            self._has_gpu,
+            n_gpu_layers,
         )
 
         start_llama_server(
@@ -81,6 +100,7 @@ class LLM:
             context_window_size=settings.LLAMA_CPP_SERVER_CONTEXT_WINDOW_SIZE,
             n_batch=settings.LLAMA_CPP_SERVER_N_BATCH,
             n_threads=settings.LLAMA_CPP_SERVER_N_THREADS,
+            n_gpu_layers=n_gpu_layers,
         )
 
         self._wait_for_server()
@@ -112,11 +132,15 @@ class LLM:
         if stop:
             payload["stop"] = stop
 
+        inference_start_time = time.time()
         response = requests.post(
             f"{self._base_url}/v1/completions",
             json=payload,
             timeout=120,
         )
+        logger.info(f"llama-cpp server prompt response time: "
+                    f"{time.time() - inference_start_time:.2f} seconds")
+
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["text"]
@@ -147,11 +171,15 @@ class LLM:
         if stop:
             payload["stop"] = stop
 
+        inference_start_time = time.time()
         response = requests.post(
             f"{self._base_url}/v1/chat/completions",
             json=payload,
             timeout=120,
         )
+        logger.info(f"llama-cpp server chat response time: "
+                    f"{time.time() - inference_start_time:.2f} seconds")
+
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
@@ -191,19 +219,19 @@ class LLM:
 
 
 # FOR DEBUGGING
-if __name__ == "__main__":
-    llm = LLM()
+# if __name__ == "__main__":
+#     llm = LLM()
 
-    llm.setup()
-    llm.start()
+#     llm.setup()
+#     llm.start()
 
-    response = llm.prompt("What is 2 + 2?")
-    print("[prompt] response:", response)
+#     response = llm.prompt("What is 2 + 2?")
+#     print("[prompt] response:", response)
 
-    # reply = llm.chat([
-    #     {"role": "system", "content": "You are a concise assistant."},
-    #     {"role": "user", "content": "Summarise the French Revolution in one sentence."},
-    # ])
-    # print("[chat] response:", reply)
+#     reply = llm.chat([
+#         {"role": "system", "content": "You are a concise assistant."},
+#         {"role": "user", "content": "Summarise the French Revolution in one sentence."},
+#     ])
+#     print("[chat] response:", reply)
 
-    llm.stop()
+#     llm.stop()

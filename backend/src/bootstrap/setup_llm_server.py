@@ -11,6 +11,38 @@ from utils import get_logger
 logger = get_logger(__name__)
 
 
+def is_gpu_available() -> bool:
+    """
+    Detect if an NVIDIA CUDA-capable GPU is available on the machine.
+    Uses ctypes to query CUDA driver APIs directly, falling back to nvidia-smi.
+    """
+    try:
+        if os.name == "nt":
+            import ctypes
+            cuda = ctypes.windll.nvcuda
+        else:
+            import ctypes
+            cuda = ctypes.cdll.LoadLibrary("libcuda.so")
+
+        if cuda.cuInit(0) == 0:
+            count = ctypes.c_int()
+            if cuda.cuDeviceGetCount(ctypes.byref(count)) == 0 and count.value > 0:
+                return True
+    except Exception:
+        pass
+
+    try:
+        res = subprocess.run(
+            ["nvidia-smi"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
 def install_llama_runtime(
     url: str,
     extract_dir: str | Path,
@@ -22,14 +54,20 @@ def install_llama_runtime(
     try:
         extract_dir = Path(extract_dir)
         runtime_filepath = extract_dir / "llama-server.exe"
+        installed_url_file = extract_dir / ".installed_url"
 
-        # Already installed
-        if runtime_filepath.exists():
-            logger.info(
-                f"Llama runtime is already installed at: {runtime_filepath}"
-            )
-            os.environ["LLM_SERVER_BINARY"] = str(runtime_filepath)
-            return runtime_filepath
+        # Already installed with matching URL
+        if runtime_filepath.exists() and installed_url_file.exists():
+            try:
+                installed_url = installed_url_file.read_text(encoding="utf-8").strip()
+                if installed_url == url:
+                    logger.info(
+                        f"Llama runtime is already installed at: {runtime_filepath}"
+                    )
+                    os.environ["LLM_SERVER_BINARY"] = str(runtime_filepath)
+                    return runtime_filepath
+            except Exception:
+                pass
 
         logger.info(
             f"Installing llama runtime from {url} "
@@ -114,6 +152,11 @@ def install_llama_runtime(
             with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
                 zip_ref.extractall(extract_dir)
 
+        try:
+            installed_url_file.write_text(url, encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not write .installed_url marker file: {e}")
+
         logger.info(f"Runtime installed to {extract_dir}")
 
         os.environ["LLM_SERVER_BINARY"] = str(runtime_filepath)
@@ -132,10 +175,13 @@ def start_llama_server(
     context_window_size: int = 4096,
     n_batch: int = 512,
     n_threads: int = 4,
+    n_gpu_layers: int = 0,
 ) -> None:
     """Starts the llama-cpp server with the given model and port."""
     try:
-        logger.info("Starting llama-cpp server...")
+        logger.info(
+            "Starting llama-cpp server (n_gpu_layers=%d)...", n_gpu_layers
+        )
         subprocess.Popen(
             [
                 llama_server_filepath,
@@ -149,6 +195,8 @@ def start_llama_server(
                 str(n_threads),
                 "--port",
                 str(port),
+                "-ngl",
+                str(n_gpu_layers),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
