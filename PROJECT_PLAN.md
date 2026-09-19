@@ -43,17 +43,21 @@ Runs locally on your machine with automatic **GPU acceleration** (NVIDIA CUDA) a
 ## 4. Architecture
 
 ```
+                    ┌─────────────────────────────────────────────┐
+ User query ──────► │  Query Classifier  (Pure Python / Regex)    │
+                    │  Assigns a query_type:                      │
+                    │    count_list / content_summary /           │
+                    │    date_range / thread_lookup               │
+                    │                                             │
+                    │  Looks up query_type → allowed tool subset  │
+                    │  e.g. content_summary → [search_emails,     │
+                    │                          get_email_thread]  │
+                    └───────────────────┬─────────────────────────┘
+                                        │  (query_type + tool subset)
+                                        ▼
                     ┌───────────────────────┐
- User query ──────► │  Query Classifier     │  (Rule-based fast path; LLM fallback)
-                    │  date_range /         │
-                    │  content_summary /    │
-                    │  count_list /         │
-                    │  thread_lookup        │
-                    └───────────┬───────────┘
-                                │
-                                ▼
-                    ┌───────────────────────┐
-                    │   Router Node (LLM)   │  Selects tool(s) & arguments
+                    │   Router Node (LLM)   │  Given ONLY the allowed tool subset,
+                    │                       │  decides which to call & with what args.
                     └───────────┬───────────┘
                                 │
                                 ▼
@@ -78,6 +82,31 @@ Runs locally on your machine with automatic **GPU acceleration** (NVIDIA CUDA) a
 ```
 
 Only the **Router** and **Response** nodes communicate with the local LLM server. Query classification, database filtering, tool dispatch, and deduplication run as pure Python logic to maintain low latency and prevent hallucinations.
+
+### Why the Classifier Exists: Tool Namespace Gating
+
+The classifier is **not** intended to make routing decisions that the LLM could theoretically make itself. Its purpose is to act as a **tool namespace gatekeeper** before the Router ever sees the query.
+
+Instead of giving the Router the full list of all available tools and asking it to pick, the classifier:
+1. Assigns a `query_type` using fast, deterministic regex/keyword matching.
+2. Looks up a hardcoded `query_type → allowed_tools` mapping.
+3. Passes only that **subset** of tools to the Router's prompt.
+
+```python
+# agent/classifier.py
+
+QUERY_TYPE_TOOLS: dict[str, list[str]] = {
+    "count_list":      ["search_emails"],
+    "date_range":      ["search_emails"],
+    "content_summary": ["search_emails", "get_email_thread"],
+    "thread_lookup":   ["get_email_thread"],
+}
+```
+
+This matters for two reasons:
+
+- **Small-model reliability**: A 2.6B LLM given 2 constrained tool choices and a narrow, type-specific prompt is significantly more consistent than one given an open-ended "pick any tools" decision. Constraining tool choice to 1–2 options per query type eliminates whole classes of routing mistakes.
+- **Scalability**: As InboxIQ grows and new tools are added (e.g. `get_attachment_list`, `search_contacts`, `get_calendar_events`), the Router prompt never balloons in size. Each query type only ever exposes the 1–3 tools actually relevant to it — the classifier absorbs all the complexity of the growing tool registry.
 
 ---
 
@@ -196,8 +225,8 @@ def get_email_thread(
 - [x] **Tool Definitions**: Implemented `search_emails` and `get_email_thread` linked directly to database and sync caching.
 
 ### Phase 2: Agent Graph & Orchestration (NEXT UP)
-- [ ] **Query Classifier (`agent/classifier.py`)**: Rule-based regex/intent classifier (`count_list`, `content_summary`, `date_range`, `thread_lookup`) to constrain prompting.
-- [ ] **Router Node (`agent/router.py`)**: Prompt design instructing LFM2.5 to generate structured tool calls.
+- [ ] **Query Classifier (`agent/classifier.py`)**: Fast regex/keyword classifier that assigns a `query_type` and looks up the corresponding `QUERY_TYPE_TOOLS` mapping. Passes only the allowed tool subset to the Router — keeps the Router prompt small and reliable regardless of how many tools are added to the project over time.
+- [ ] **Router Node (`agent/router.py`)**: Receives the `query_type` and its pre-filtered tool subset from the classifier. Uses the LLM to decide argument values (dates, keywords, sender filters etc.) and ordering of tool calls — not which tools to use.
 - [ ] **Aggregator Node (`agent/aggregator.py`)**: Deduplication and formatting of SQLite results before response generation.
 - [ ] **Response Node (`agent/responder.py`)**: Grounded answer generation using tool context.
 - [ ] **LangGraph Integration (`agent/graph.py`)**: End-to-end graph state machine coordinating nodes and tool dispatches.
