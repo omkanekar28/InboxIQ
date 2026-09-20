@@ -53,6 +53,8 @@ class TestAgentE2E(unittest.TestCase):
 
         # 2. Bind agent tools to this test DB and a mock sync client
         cls.mock_gmail_sync = MagicMock()
+        cls.mock_gmail_sync.fetch_and_cache_body.return_value = "Mock email body content"
+        cls.mock_gmail_sync.fetch_email_body.return_value = "Mock email body content"
         init_tools(db=cls.db, gmail_sync=cls.mock_gmail_sync)
 
         # 3. Start local LLM server (defaults to settings.MODEL_TYPE, overridable via INBOXIQ_MODEL)
@@ -65,9 +67,18 @@ class TestAgentE2E(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         # Stop LLM server and clean up temporary database
-        cls.llm.stop()
-        cls.db.conn.close()
-        cls.temp_dir.cleanup()
+        try:
+            cls.llm.stop()
+        except Exception:
+            pass
+        try:
+            if hasattr(cls.db, "cursor") and cls.db.cursor:
+                cls.db.cursor.close()
+            if hasattr(cls.db, "conn") and cls.db.conn:
+                cls.db.conn.close()
+            cls.temp_dir.cleanup()
+        except Exception:
+            pass
 
     def _ask_agent(self, user_query: str) -> str:
         """Helper to send user query with dynamic system prompt to agent."""

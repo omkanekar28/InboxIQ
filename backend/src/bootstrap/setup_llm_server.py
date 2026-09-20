@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import zipfile
 import tempfile
@@ -172,7 +173,7 @@ def start_llama_server(
     llama_server_filepath: str,
     model_filepath: str,
     port: int = 8000,
-    context_window_size: int = 4096,
+    context_window_size: int = 16000,
     n_batch: int = 512,
     n_threads: int = 4,
     n_gpu_layers: int = 0,
@@ -182,6 +183,10 @@ def start_llama_server(
         logger.info(
             "Starting llama-cpp server (n_gpu_layers=%d)...", n_gpu_layers
         )
+        log_dir = Path(llama_server_filepath).parent.parent / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = open(log_dir / "llama_server.log", "a", encoding="utf-8")
+
         subprocess.Popen(
             [
                 llama_server_filepath,
@@ -189,7 +194,7 @@ def start_llama_server(
                 model_filepath,
                 "-c",
                 str(context_window_size),
-                "-n",
+                "-b",
                 str(n_batch),
                 "--threads",
                 str(n_threads),
@@ -198,8 +203,8 @@ def start_llama_server(
                 "-ngl",
                 str(n_gpu_layers),
             ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=log_file,
         )
         logger.info("Llama-cpp server started.")
     except Exception as e:
@@ -217,7 +222,7 @@ def stop_llama_server():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-
+        time.sleep(0.5)
         logger.info("Llama-cpp server stopped.")
 
     except Exception as e:

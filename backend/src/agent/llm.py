@@ -141,7 +141,7 @@ class LLM:
         self,
         messages: list[dict[str, str]],
         *,
-        max_tokens: int = 2048,
+        max_tokens: int = settings.LLM_MAX_TOKENS,
         temperature: float = 0.7,
         stop: Optional[list[str]] = None,
     ) -> str:
@@ -183,7 +183,12 @@ class LLM:
                 usage_data["timings"] = data["timings"]
             llm_output_logger.debug(f"Token usage: \n{json.dumps(usage_data, indent=4)}")
 
-        content = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        content = msg.get("content") or ""
+        if not content and msg.get("reasoning_content"):
+            logger.warning("Assistant response content was empty; falling back to reasoning_content")
+            content = msg["reasoning_content"]
+        content = skip_thinking_part_response(content)
         llm_output_logger.debug(f"Final response: \n{content}")
         return content
 
@@ -191,7 +196,7 @@ class LLM:
         self,
         messages: list[dict],
         *,
-        max_tokens: int = 2048,
+        max_tokens: int = settings.LLM_MAX_TOKENS,
         temperature: float = 0.7,
         stop: Optional[list[str]] = None,
         tools: Optional[list[dict]] = None,
@@ -231,6 +236,8 @@ class LLM:
                 f"{time.time() - inference_start_time:.2f} seconds"
             )
 
+            if not response.ok:
+                logger.error(f"llama-cpp server returned error [{response.status_code}]: {response.text}")
             response.raise_for_status()
 
             data = response.json()
@@ -247,7 +254,11 @@ class LLM:
             if not message.get("tool_calls"):
                 logger.info(f"Agent total run time: "
                             f"{time.time() - agent_run_start_time:.2f} seconds")
-                final_response = skip_thinking_part_response(message.get("content", ""))
+                content = message.get("content") or ""
+                if not content and message.get("reasoning_content"):
+                    logger.warning("Assistant response content was empty; falling back to reasoning_content")
+                    content = message["reasoning_content"]
+                final_response = skip_thinking_part_response(content)
                 llm_output_logger.debug(f"Final response: \n{final_response}")
                 return final_response
 
@@ -339,7 +350,7 @@ class LLM:
 #     try:
 #         reply = llm.chat_with_tools([
 #             {"role": "system", "content": get_system_prompt()},
-#             {"role": "user", "content": "Find all emails from Indeed in the past 2 months."},
+#             {"role": "user", "content": "Summarise my conversations with Noel from past 1 week."},
 #         ])
 #         print("[chat_with_tools] response:", reply)
 #     finally:

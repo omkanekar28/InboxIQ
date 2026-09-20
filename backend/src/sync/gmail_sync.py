@@ -86,13 +86,47 @@ class GmailSync:
 
         return text_body.strip()
 
+    def _parse_message(
+        self,
+        message: dict,
+        format: Literal["full", "metadata"] = "metadata",
+    ) -> dict:
+        """Parse raw Gmail message dictionary into standardized email dict"""
+        payload = message.get("payload", {})
+        headers = payload.get("headers", [])
+
+        # 1. Parse Headers & Metadata
+        subject = self._get_header(headers, "Subject")
+        sender = self._get_header(headers, "From")
+        recipient = self._get_header(headers, "To")
+        date_str = self._get_header(headers, "Date")
+        internal_date = message.get("internalDate")  # epoch timestamp in ms
+
+        # 2. Extract Body (only when format="full")
+        text_body = ""
+        if format == "full":
+            text_body = self._extract_body(payload)
+
+        return {
+            "id": message.get("id"),
+            "thread_id": message.get("threadId"),
+            "label_ids": message.get("labelIds", []),
+            "snippet": message.get("snippet", ""),
+            "subject": subject,
+            "from": sender,
+            "to": recipient,
+            "date": date_str,
+            "internal_date_ms": int(internal_date) if internal_date else None,
+            "text_body": text_body,
+        }
+
     def _get_email_details(
         self,
         msg_id: str,
         format: Literal["full", "metadata"] = "metadata",
         metadata_headers: list[str] | None = ["Subject", "From", "To", "Date"],
     ) -> dict:
-        """Fetch and parse message details for a given message ID"""
+        """Fetch and parse message details for a single message ID"""
         if format == "metadata":
             message = (
                 self.service.users()
@@ -116,34 +150,7 @@ class GmailSync:
                 )
                 .execute()
             )
-
-        payload = message.get("payload", {})
-        headers = payload.get("headers", [])
-
-        # 1. Parse Headers & Metadata
-        subject = self._get_header(headers, "Subject")
-        sender = self._get_header(headers, "From")
-        recipient = self._get_header(headers, "To")
-        date_str = self._get_header(headers, "Date")
-        internal_date = message.get("internalDate")  # epoch timestamp in ms
-
-        # 2. Extract Body (only when format="full" — not used during sync)
-        text_body = ""
-        if format == "full":
-            text_body = self._extract_body(payload)
-
-        return {
-            "id": message.get("id"),
-            "thread_id": message.get("threadId"),
-            "label_ids": message.get("labelIds", []),
-            "snippet": message.get("snippet", ""),
-            "subject": subject,
-            "from": sender,
-            "to": recipient,
-            "date": date_str,
-            "internal_date_ms": int(internal_date) if internal_date else None,
-            "text_body": text_body,
-        }
+        return self._parse_message(message, format=format)
 
     def fetch_and_cache_body(self, msg_id: str) -> str:
         """Fetches the full body for a single message from Gmail and caches it"""
@@ -155,13 +162,90 @@ class GmailSync:
         )
         return details["text_body"]
 
+    def _batch_fetch_metadata(
+        self,
+        message_ids: list[str],
+        metadata_headers: list[str] = ["Subject", "From", "To", "Date"],
+        batch_size: int = 5,
+    ) -> list[dict]:
+        """Fetch metadata for a list of message IDs in parallel batches.
+
+        Uses Gmail API's BatchHttpRequest (batch size 20) to safely stay within
+        Gmail's per-user mailbox concurrency limits and avoid 429 errors.
+        """
+        if not message_ids:
+            return []
+
+        total = len(message_ids)
+        logger.info(f"Fetching metadata for {total} messages in batches of {batch_size}...")
+
+        email_details: list[dict] = []
+        pending_ids = list(message_ids)
+        start_time = time.time()
+        max_retries = 3
+
+        for attempt in range(max_retries):
+            if not pending_ids:
+                break
+
+            failed_ids: list[str] = []
+
+            for i in range(0, len(pending_ids), batch_size):
+                chunk = pending_ids[i : i + batch_size]
+                batch = self.service.new_batch_http_request()
+
+                def make_callback(mid: str):
+                    def callback(request_id, response, exception):
+                        if exception is not None:
+                            failed_ids.append(mid)
+                        elif response:
+                            email_details.append(self._parse_message(response, format="metadata"))
+                    return callback
+
+                for mid in chunk:
+                    req = self.service.users().messages().get(
+                        userId="me",
+                        id=mid,
+                        format="metadata",
+                        metadataHeaders=metadata_headers,
+                    )
+                    batch.add(req, callback=make_callback(mid))
+
+                batch.execute()
+
+                elapsed = time.time() - start_time
+                logger.info(
+                    f"Progress: {len(email_details)}/{total} emails "
+                    f"({(len(email_details) / total) * 100:.0f}%) in {elapsed:.1f}s"
+                )
+                time.sleep(0.05)  # Smooth pacing to respect per-second rate limits
+
+            pending_ids = failed_ids
+            if pending_ids and attempt < max_retries - 1:
+                wait_time = 1.0 * (attempt + 1)
+                logger.warning(
+                    f"{len(pending_ids)} messages rate-limited. Retrying in {wait_time:.1f}s "
+                    f"(attempt {attempt + 2}/{max_retries})..."
+                )
+                time.sleep(wait_time)
+                batch_size = max(5, batch_size // 2)
+
+        if pending_ids:
+            logger.warning(f"Could not fetch metadata for {len(pending_ids)} messages after {max_retries} attempts.")
+
+        logger.info(
+            f"Successfully fetched metadata for {len(email_details)}/{total} emails "
+            f"in {time.time() - start_time:.2f} seconds."
+        )
+        return email_details
+
     def _fetch_all_emails(
         self, 
-        max_recent_emails: int = 3, 
-        metadata_headers: list[str] = ["Subject", "From", "To", "Date"]
+        max_recent_emails: int = 1000, 
+        metadata_headers: list[str] = ["Subject", "From", "To", "Date"], 
+        batch_size: int = 5,
     ) -> list[dict]:
         """Fetch recent emails from Gmail up to GMAIL_SYNC_MAX_RECENT_EMAILS"""
-        fetch_emails_start_time = time.time()
         messages = []
         page_token = None
         page = 0
@@ -175,7 +259,7 @@ class GmailSync:
         while len(messages) < max_recent_emails:
             page += 1
             remaining = max_recent_emails - len(messages)
-            batch_size = min(500, remaining)
+            list_page_size = min(500, remaining)
 
             results = (
                 self.service.users()
@@ -183,7 +267,7 @@ class GmailSync:
                 .list(
                     userId="me",
                     pageToken=page_token,
-                    maxResults=batch_size,
+                    maxResults=list_page_size,
                 )
                 .execute()
             )
@@ -204,26 +288,13 @@ class GmailSync:
                 break
 
         messages = messages[: max_recent_emails]
+        message_ids = [m["id"] for m in messages if "id" in m]
 
-        logger.info(
-            f"Fetched {len(messages)} message IDs. "
-            "Fetching message metadata..."
+        return self._batch_fetch_metadata(
+            message_ids=message_ids,
+            metadata_headers=metadata_headers,
+            batch_size=batch_size
         )
-
-        email_details = []
-
-        for message in messages:
-            email_detail = self._get_email_details(
-                msg_id=message["id"],
-                format="metadata",
-                metadata_headers=metadata_headers,
-            )
-            email_details.append(email_detail)
-
-        logger.info(
-            f"Fetched {len(email_details)} emails in {time.time() - fetch_emails_start_time:.2f} seconds."
-        )
-        return email_details
 
     def _get_current_history_id(self) -> str | None:
         """Fetch the current historyId of the mailbox from Gmail profile"""
@@ -272,11 +343,10 @@ class GmailSync:
 
         logger.info(f"Found {len(new_message_ids)} messages in date-range fallback.")
         if new_message_ids:
-            new_emails = [self._get_email_details(
-                msg_id=mid,
-                format="metadata",
+            new_emails = self._batch_fetch_metadata(
+                message_ids=new_message_ids,
                 metadata_headers=metadata_headers,
-            ) for mid in new_message_ids]
+            )
             self.db.ingest_emails(new_emails)
 
         # Update checkpoint to current mailbox state
@@ -361,11 +431,10 @@ class GmailSync:
         # Ingest newly added emails
         if messages_added_ids:
             logger.info(f"Fetching metadata for {len(messages_added_ids)} new emails...")
-            new_emails = [self._get_email_details(
-                msg_id=mid,
-                format="metadata",
+            new_emails = self._batch_fetch_metadata(
+                message_ids=list(messages_added_ids),
                 metadata_headers=metadata_headers,
-            ) for mid in messages_added_ids]
+            )
             self.db.ingest_emails(new_emails)
 
         # Delete removed emails
@@ -389,7 +458,12 @@ class GmailSync:
             f"New historyId: {new_history_id}"
         )
 
-    def sync_emails(self, max_recent_emails: int = 3) -> None:
+    def sync_emails(
+        self, 
+        max_recent_emails: int = 3, 
+        metadata_headers: list[str] = ["Subject", "From", "To", "Date"], 
+        batch_size: int = 20,
+    ) -> None:
         """Sync emails from Gmail to local database and update sync_state"""
         last_history_id = self.db.get_sync_state("gmail_last_history_id")
 
@@ -402,7 +476,11 @@ class GmailSync:
             current_history_id = self._get_current_history_id()
 
             # 2. Fetch and ingest email metadata
-            email_details = self._fetch_all_emails(max_recent_emails=max_recent_emails)
+            email_details = self._fetch_all_emails(
+                max_recent_emails=max_recent_emails, 
+                metadata_headers=metadata_headers, 
+                batch_size=batch_size
+            )
             logger.info("Saving emails to database...")
             self.db.ingest_emails(email_details)
 
@@ -430,7 +508,11 @@ class GmailSync:
 #     gmail_sync = GmailSync(db)
 
 #     ## Full flow
-#     gmail_sync.sync_emails(max_recent_emails=settings.GMAIL_SYNC_MAX_RECENT_EMAILS)
+#     gmail_sync.sync_emails(
+#         max_recent_emails=settings.GMAIL_SYNC_MAX_RECENT_EMAILS, 
+#         metadata_headers=settings.GMAIL_SYNC_METADATA_HEADERS, 
+#         batch_size=settings.GMAIL_SYNC_BATCH_SIZE
+#     )
 
 #     ## Partial flow (Skips DB ingestion part)
 #     # emails = gmail_sync._fetch_all_emails()

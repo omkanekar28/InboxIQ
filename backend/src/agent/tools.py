@@ -23,7 +23,7 @@ def search_emails(
     date_from: str | None = None,
     date_to: str | None = None,
     label: str | None = None,
-    limit: int = 50,
+    limit: int = 25,
 ) -> list[dict]:
     """Search emails using any combination of filters.
 
@@ -38,7 +38,7 @@ def search_emails(
         date_from:  Inclusive lower bound (any common date format).
         date_to:    Inclusive upper bound (any common date format).
         label:      Gmail label to filter by (e.g. "INBOX", "UNREAD").
-        limit:      Maximum number of results to return (default 50).
+        limit:      Maximum number of results to return (default 25).
 
     Returns:
         List of email dicts ordered newest-first.
@@ -121,7 +121,7 @@ TOOLS = [
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of results to return (default 50).",
+                        "description": "Maximum number of results to return (default 25).",
                     },
                 },
                 "required": [],

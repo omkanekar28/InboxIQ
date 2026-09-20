@@ -4,6 +4,8 @@ Single source of truth for database operations.
 
 
 import json
+import re
+import html
 from datetime import datetime, timezone
 import os
 import sqlite3
@@ -220,14 +222,15 @@ class Database:
         date_from: str | None = None,
         date_to: str | None = None,
         label: str | None = None,
-        limit: int = 50,
+        limit: int = 25,
     ) -> list[dict]:
         """Search emails with any combination of filters in a single SQL query.
 
         All supplied arguments are combined with AND — each extra argument
         narrows the result set rather than producing a separate one.
-        Returns at most `limit` rows ordered newest-first.
+        Returns at most `limit` rows (capped at 25) ordered newest-first.
         """
+        limit = min(limit or 25, 25)
         conditions: list[str] = []
         params: list = []
 
@@ -279,7 +282,16 @@ class Database:
             LIMIT ?
         """, params + [limit])
         rows = self.cursor.fetchall()
-        return [{key: value for key, value in zip(self.search_email_fields, row)} for row in rows]
+        results = []
+        for row in rows:
+            item = {key: value for key, value in zip(self.search_email_fields, row)}
+            if "snippet" in item and item["snippet"]:
+                cleaned = html.unescape(item["snippet"])
+                cleaned = re.sub(r"[\u200b-\u200f\ufeff\u00a0]+", " ", cleaned)
+                cleaned = re.sub(r"\s+", " ", cleaned).strip()
+                item["snippet"] = cleaned
+            results.append(item)
+        return results
 
 
 # FOR DEBUGGING
