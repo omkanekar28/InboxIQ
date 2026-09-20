@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 from settings import settings
-from utils import get_logger
+from utils import get_logger, skip_thinking_part_response
 from bootstrap.setup_models import setup_models
 from bootstrap.setup_llm_server import (
     install_llama_runtime,
@@ -141,7 +141,7 @@ class LLM:
         self,
         messages: list[dict[str, str]],
         *,
-        max_tokens: int = 1024,
+        max_tokens: int = 2048,
         temperature: float = 0.7,
         stop: Optional[list[str]] = None,
     ) -> str:
@@ -191,7 +191,7 @@ class LLM:
         self,
         messages: list[dict],
         *,
-        max_tokens: int = 1024,
+        max_tokens: int = 2048,
         temperature: float = 0.7,
         stop: Optional[list[str]] = None,
         tools: Optional[list[dict]] = None,
@@ -247,8 +247,9 @@ class LLM:
             if not message.get("tool_calls"):
                 logger.info(f"Agent total run time: "
                             f"{time.time() - agent_run_start_time:.2f} seconds")
-                llm_output_logger.debug(f"Final response: \n{message.get('content', '')}")
-                return message.get("content", "")
+                final_response = skip_thinking_part_response(message.get("content", ""))
+                llm_output_logger.debug(f"Final response: \n{final_response}")
+                return final_response
 
             # Add assistant message containing tool call
             messages.append(message)

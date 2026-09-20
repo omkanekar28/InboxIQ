@@ -97,15 +97,15 @@ TOOLS = [
                 "properties": {
                     "keyword": {
                         "type": "string",
-                        "description": "Match against subject or snippet (case-insensitive).",
+                        "description": "Keywords or search term to match against subject, snippet, or sender (e.g. 'interview', 'SQLite', 'GitHub').",
                     },
                     "sender": {
                         "type": "string",
-                        "description": "Filter by sender name or email address (e.g. 'Indeed', 'google.com'). Use this when the user asks for emails from someone.",
+                        "description": "Filter by sender name or email address (e.g. 'Indeed', 'Alice', 'Uber'). Use this whenever the user asks for emails from someone.",
                     },
                     "recipient": {
                         "type": "string",
-                        "description": "Partial match against the recipient field.",
+                        "description": "Filter by recipient email address. Only use when the user explicitly asks for emails sent TO a specific recipient.",
                     },
                     "date_from": {
                         "type": "string",

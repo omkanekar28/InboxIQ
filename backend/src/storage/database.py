@@ -232,8 +232,17 @@ class Database:
         params: list = []
 
         if keyword:
-            conditions.append("(subject LIKE ? OR snippet LIKE ? OR sender LIKE ?)")
-            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+            terms = [t.strip() for t in keyword.split() if t.strip()]
+            if len(terms) <= 1:
+                conditions.append("(subject LIKE ? OR snippet LIKE ? OR sender LIKE ?)")
+                params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+            else:
+                term_clauses = ["(subject LIKE ? OR snippet LIKE ? OR sender LIKE ?)"]
+                params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                for term in terms:
+                    term_clauses.append("(subject LIKE ? OR snippet LIKE ? OR sender LIKE ?)")
+                    params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
+                conditions.append(f"({' OR '.join(term_clauses)})")
 
         if sender:
             conditions.append("sender LIKE ?")
