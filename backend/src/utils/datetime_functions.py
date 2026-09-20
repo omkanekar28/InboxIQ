@@ -4,6 +4,11 @@ from dateutil.parser import ParserError
 import re
 
 
+def get_todays_date() -> str:
+    """Get today's date in the format YYYY-MM-DD."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
 def parse_date_from_str(date: str, output_format: str = "%Y-%m-%d") -> str:
     """
     Parse a date string in (almost) any common format and return it

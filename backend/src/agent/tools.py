@@ -83,6 +83,76 @@ def get_email_thread(thread_id: str) -> dict:
     return thread
 
 
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_emails",
+            "description": (
+                "Search for emails using various filters. "
+                "Does not fetch full email bodies."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "Match against subject or snippet (case-insensitive).",
+                    },
+                    "sender": {
+                        "type": "string",
+                        "description": "Filter by sender name or email address (e.g. 'Indeed', 'google.com'). Use this when the user asks for emails from someone.",
+                    },
+                    "recipient": {
+                        "type": "string",
+                        "description": "Partial match against the recipient field.",
+                    },
+                    "date_from": {
+                        "type": "string",
+                        "description": "Inclusive lower bound (any common date format).",
+                    },
+                    "date_to": {
+                        "type": "string",
+                        "description": "Inclusive upper bound (any common date format).",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "Gmail label to filter by (e.g. \"INBOX\", \"UNREAD\").",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (default 50).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_email_thread",
+            "description": "Fetch all emails in a thread by thread_id, including full body text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "thread_id": {
+                        "type": "string",
+                        "description": "The Gmail thread ID to retrieve.",
+                    },
+                },
+                "required": ["thread_id"],
+            },
+        },
+    },
+]
+
+TOOL_FUNCTIONS = {
+    "search_emails": search_emails,
+    "get_email_thread": get_email_thread
+}
+
+
 # FOR DEBUGGING
 # if __name__ == "__main__":
 #     import json
@@ -91,8 +161,8 @@ def get_email_thread(thread_id: str) -> dict:
 #     from sync.gmail_sync import GmailSync
 
 #     db = Database(
-#         store_dir=settings.TEST_DIR,
-#         sqlite_filename=settings.TEST_DB_SQLITE_FILENAME,
+#         store_dir=settings.DB_STORE_DIR,
+#         sqlite_filename=settings.DB_SQLITE_FILENAME,
 #         search_email_fields=settings.SEARCH_EMAIL_FIELDS,
 #         email_thread_fields=settings.EMAIL_THREAD_FIELDS,
 #     )

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     GMAIL_SYNC_SCOPES: list[str] = [
         "https://www.googleapis.com/auth/gmail.readonly"
     ]
-    GMAIL_SYNC_MAX_RECENT_EMAILS: int = 5  # TODO: Increase in PROD
+    GMAIL_SYNC_MAX_RECENT_EMAILS: int = 10  # TODO: Increase in PROD
     GMAIL_SYNC_METADATA_HEADERS: list[str] = ["Subject", "From", "To", "Date"]
     GMAIL_SYNC_TOKEN_FILEPATH: str = "token.json"
     GMAIL_SYNC_CREDENTIALS_FILEPATH: str = "credentials.json"
@@ -25,10 +25,6 @@ class Settings(BaseSettings):
     # FAISS
     DB_FAISS_INDEX_NAME: str = "inboxiq.index"
     DB_FAISS_METADATA_FILENAME: str = "inboxiq.json"
-
-    # Testing
-    TEST_DIR: str = "../sandbox"
-    TEST_DB_SQLITE_FILENAME: str = "inboxiq.test.db"
 
     # Tools
     SEARCH_EMAIL_FIELDS: tuple[str, ...] = (
@@ -55,7 +51,7 @@ class Settings(BaseSettings):
     # Model
     MODEL_TYPE: Literal["balanced", "lightweight"] = "lightweight"
     MODEL_DOWNLOAD_URL_BALANCED: str = "https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-Q4_K_M.gguf"
-    MODEL_DOWNLOAD_URL_LIGHTWEIGHT: str = "https://huggingface.co/LiquidAI/LFM2.5-230M-GGUF/resolve/main/LFM2.5-230M-Q4_K_M.gguf"
+    MODEL_DOWNLOAD_URL_LIGHTWEIGHT: str = "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-GGUF/resolve/main/LFM2.5-1.2B-Thinking-Q4_K_M.gguf"
     MODEL_STORE_DIR: str = "../models"
 
     # Llama-Cpp Server

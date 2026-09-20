@@ -44,5 +44,5 @@ def setup_models(
 #     setup_models(
 #         balanced_model_url=settings.MODEL_DOWNLOAD_URL_BALANCED, 
 #         lightweight_model_url=settings.MODEL_DOWNLOAD_URL_LIGHTWEIGHT, 
-#         models_store_dir=os.path.join(settings.TEST_DIR, "models")
+#         models_store_dir=os.path.join(settings.DB_STORE_DIR, "models")
 #     )

@@ -424,8 +424,8 @@ class GmailSync:
 # if __name__ == "__main__":
 #     from settings import settings
 #     db = Database(
-#         store_dir=settings.TEST_DIR, 
-#         sqlite_filename=settings.TEST_DB_SQLITE_FILENAME
+#         store_dir=settings.DB_STORE_DIR, 
+#         sqlite_filename=settings.DB_SQLITE_FILENAME
 #     )
 #     gmail_sync = GmailSync(db)
 

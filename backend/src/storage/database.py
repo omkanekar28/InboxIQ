@@ -232,8 +232,8 @@ class Database:
         params: list = []
 
         if keyword:
-            conditions.append("(subject LIKE ? OR snippet LIKE ?)")
-            params.extend([f"%{keyword}%", f"%{keyword}%"])
+            conditions.append("(subject LIKE ? OR snippet LIKE ? OR sender LIKE ?)")
+            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
 
         if sender:
             conditions.append("sender LIKE ?")
@@ -277,8 +277,8 @@ class Database:
 # if __name__ == "__main__":
 #     from settings import settings
 #     db = Database(
-#         store_dir=settings.TEST_DIR,
-#         sqlite_filename=settings.TEST_DB_SQLITE_FILENAME,
+#         store_dir=settings.DB_STORE_DIR,
+#         sqlite_filename=settings.DB_SQLITE_FILENAME,
 #         search_email_fields=settings.SEARCH_EMAIL_FIELDS,
 #         email_thread_fields=settings.EMAIL_THREAD_FIELDS,
 #     )

@@ -2,16 +2,21 @@
 """
 sqlite_summary.py 🗄️
 
-Give it a SQLite DB path and it will print:
+Give it a SQLite DB path and optional row count, and it will print:
 - All tables
 - Column details (name, type, nullability, default, PK) for each table
 - Row count per table
-- First 5 rows of each table
+- Latest N rows of each table
 
 Usage:
+    python sqlite_summary.py
+    python sqlite_summary.py 10
     python sqlite_summary.py /path/to/database.db
+    python sqlite_summary.py /path/to/database.db 10
+    python sqlite_summary.py -n 10
 """
 
+import argparse
 import sqlite3
 import sys
 from pathlib import Path
@@ -104,7 +109,50 @@ def summarize_db(db_path: str | Path, preview_rows: int = 5):
 
 
 if __name__ == "__main__":
-    # db_path_arg = "../data/inboxiq.db"    # For production
-    db_path_arg = "../data/sandbox/inboxiq.test.db"    # For development
-    preview_n = 5
-    summarize_db(db_path_arg, preview_n)
+    parser = argparse.ArgumentParser(
+        description="Print schema, row counts, and preview rows for a SQLite database."
+    )
+    parser.add_argument(
+        "arg1",
+        nargs="?",
+        default=None,
+        help="Path to SQLite database or number of preview rows (default: ../data/inboxiq.db)",
+    )
+    parser.add_argument(
+        "arg2",
+        nargs="?",
+        default=None,
+        help="Number of preview rows (default: 5)",
+    )
+    parser.add_argument(
+        "-n", "--rows",
+        type=int,
+        default=None,
+        help="Number of preview rows to print per table (overrides positional row count)",
+    )
+
+    args = parser.parse_args()
+
+    default_db = "../data/inboxiq.db"
+    default_rows = 5
+
+    db_path = default_db
+    preview_rows = default_rows
+
+    if args.arg1 is not None:
+        # Check if arg1 is an integer (e.g. python sqlite_summary.py 10)
+        if args.arg1.isdigit() and not Path(args.arg1).exists():
+            preview_rows = int(args.arg1)
+        else:
+            db_path = args.arg1
+            if args.arg2 is not None:
+                try:
+                    preview_rows = int(args.arg2)
+                except ValueError:
+                    print(f"❌ Invalid row count: {args.arg2}")
+                    sys.exit(1)
+
+    if args.rows is not None:
+        preview_rows = args.rows
+
+    summarize_db(db_path, preview_rows)

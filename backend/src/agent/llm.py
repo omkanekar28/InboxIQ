@@ -4,6 +4,8 @@ LLM - thin wrapper around a local llama-cpp server.
 
 import time
 import requests
+import json
+import logging
 from pathlib import Path
 from typing import Optional
 from settings import settings
@@ -15,8 +17,16 @@ from bootstrap.setup_llm_server import (
     stop_llama_server,
     is_gpu_available,
 )
+from .tools import TOOLS, TOOL_FUNCTIONS
 
 logger = get_logger(__name__)
+
+llm_output_logger = get_logger(
+    "llm_output",
+    log_file="llm_output.log", 
+    file_level=logging.DEBUG,
+    console_level=logging.INFO
+)
 
 _MODEL_FILENAME: dict[str, str] = {
     "balanced": settings.MODEL_DOWNLOAD_URL_BALANCED.split("/")[-1].split("?")[0],
@@ -71,8 +81,25 @@ class LLM:
         )
         logger.info("LLM.setup() — done.")
 
+    def __enter__(self) -> "LLM":
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.stop()
+
     def start(self) -> None:
         """Launch the llama-cpp server and block until it is healthy."""
+        # Check if server is already running and healthy
+        try:
+            resp = requests.get(f"{self._base_url}/health", timeout=1)
+            if resp.status_code == 200:
+                logger.info("llama-cpp server is already running and healthy.")
+                self._ready = True
+                return
+        except requests.exceptions.RequestException:
+            pass
+
         model_filename = _MODEL_FILENAME[self._model_type]
         model_filepath = str(Path(settings.MODEL_STORE_DIR) / model_filename)
         llama_server_filepath = str(
@@ -110,46 +137,11 @@ class LLM:
         self._ready = False
         stop_llama_server()
 
-    def prompt(
-        self,
-        prompt: str,
-        *,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
-        stop: Optional[list[str]] = None,
-    ) -> str:
-        """
-        Send a plain-text prompt and return the completion string.
-        Uses the ``/v1/completions`` endpoint (raw text in, raw text out).
-        """
-        self._assert_ready()
-
-        payload: dict = {
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        if stop:
-            payload["stop"] = stop
-
-        inference_start_time = time.time()
-        response = requests.post(
-            f"{self._base_url}/v1/completions",
-            json=payload,
-            timeout=120,
-        )
-        logger.info(f"llama-cpp server prompt response time: "
-                    f"{time.time() - inference_start_time:.2f} seconds")
-
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["text"]
-
     def chat(
         self,
         messages: list[dict[str, str]],
         *,
-        max_tokens: int = 512,
+        max_tokens: int = 1024,
         temperature: float = 0.7,
         stop: Optional[list[str]] = None,
     ) -> str:
@@ -172,6 +164,8 @@ class LLM:
             payload["stop"] = stop
 
         inference_start_time = time.time()
+        llm_output_logger.debug(f"Input messages: \n{json.dumps(messages, indent=4)}")
+
         response = requests.post(
             f"{self._base_url}/v1/chat/completions",
             json=payload,
@@ -182,7 +176,107 @@ class LLM:
 
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+
+        if "usage" in data:
+            usage_data = dict(data["usage"])
+            if "timings" in data:
+                usage_data["timings"] = data["timings"]
+            llm_output_logger.debug(f"Token usage: \n{json.dumps(usage_data, indent=4)}")
+
+        content = data["choices"][0]["message"]["content"]
+        llm_output_logger.debug(f"Final response: \n{content}")
+        return content
+
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+        stop: Optional[list[str]] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> str:
+
+        self._assert_ready()
+
+        messages = list(messages)
+        tools = tools or TOOLS
+
+        agent_run_start_time = time.time()
+
+        while True:
+
+            payload = {
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "tools": tools,
+            }
+
+            if stop:
+                payload["stop"] = stop
+
+            inference_start_time = time.time()
+
+            llm_output_logger.debug(f"Input messages: \n{json.dumps(messages, indent=4)}")
+
+            response = requests.post(
+                f"{self._base_url}/v1/chat/completions",
+                json=payload,
+                timeout=120,
+            )
+
+            logger.info(
+                f"llama-cpp server response time: "
+                f"{time.time() - inference_start_time:.2f} seconds"
+            )
+
+            response.raise_for_status()
+
+            data = response.json()
+
+            if "usage" in data:
+                usage_data = dict(data["usage"])
+                if "timings" in data:
+                    usage_data["timings"] = data["timings"]
+                llm_output_logger.debug(f"Token usage: \n{json.dumps(usage_data, indent=4)}")
+
+            message = data["choices"][0]["message"]
+
+            # No tool call → final answer
+            if not message.get("tool_calls"):
+                logger.info(f"Agent total run time: "
+                            f"{time.time() - agent_run_start_time:.2f} seconds")
+                llm_output_logger.debug(f"Final response: \n{message.get('content', '')}")
+                return message.get("content", "")
+
+            # Add assistant message containing tool call
+            messages.append(message)
+
+            # Execute requested tools
+            for tool_call in message["tool_calls"]:
+
+                function_name = tool_call["function"]["name"]
+
+                raw_args = tool_call["function"]["arguments"]
+                arguments = (
+                    json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                )
+
+                if function_name not in TOOL_FUNCTIONS:
+                    raise ValueError(
+                        f"Unknown tool requested: {function_name}"
+                    )
+
+                function = TOOL_FUNCTIONS[function_name]
+
+                result = function(**arguments)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.get("id", ""),
+                    "content": json.dumps(result),
+                })
 
     def _wait_for_server(self, poll_interval: float = 1.0) -> None:
         """Poll ``/health`` until the server is ready or timeout expires."""
@@ -220,18 +314,32 @@ class LLM:
 
 # FOR DEBUGGING
 # if __name__ == "__main__":
+#     from storage import Database
+#     from sync import GmailSync
+#     from .tools import init_tools
+#     from .system_prompt import get_system_prompt
+
+#     db = Database(
+#         store_dir=settings.DB_STORE_DIR,
+#         sqlite_filename=settings.DB_SQLITE_FILENAME,
+#         search_email_fields=settings.SEARCH_EMAIL_FIELDS,
+#         email_thread_fields=settings.EMAIL_THREAD_FIELDS,
+#     )
+
+#     gmail_sync = GmailSync(db)
+
+#     init_tools(db, gmail_sync)
+
 #     llm = LLM()
 
 #     llm.setup()
 #     llm.start()
 
-#     response = llm.prompt("What is 2 + 2?")
-#     print("[prompt] response:", response)
-
-#     reply = llm.chat([
-#         {"role": "system", "content": "You are a concise assistant."},
-#         {"role": "user", "content": "Summarise the French Revolution in one sentence."},
-#     ])
-#     print("[chat] response:", reply)
-
-#     llm.stop()
+#     try:
+#         reply = llm.chat_with_tools([
+#             {"role": "system", "content": get_system_prompt()},
+#             {"role": "user", "content": "Find all emails from Indeed in the past 2 months."},
+#         ])
+#         print("[chat_with_tools] response:", reply)
+#     finally:
+#         llm.stop()
