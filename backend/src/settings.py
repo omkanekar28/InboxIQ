@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     # API Server
     API_HOST: str = "127.0.0.1"
     API_PORT: int = 8000
+    API_RELOAD: bool = True
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
