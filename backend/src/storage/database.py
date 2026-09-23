@@ -9,6 +9,7 @@ import html
 from datetime import datetime, timezone
 import os
 import sqlite3
+import threading
 from functools import wraps
 from typing import Any, Callable
 from utils import get_logger, parse_date_from_str
@@ -20,17 +21,30 @@ def with_transaction(func: Callable) -> Callable:
     """
     Decorator that automatically commits on success,
     or rolls back changes if an exception occurs.
+    Guarantees thread-safe atomic transactions via self.lock.
     """
     @wraps(func)
     def wrapper(self, *args, **kwargs) -> Any:
-        try:
-            result = func(self, *args, **kwargs)
-            self.conn.commit()
-            return result
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Transaction failed in '{func.__name__}': {e}. Rolled back changes.")
-            raise
+        with self.lock:
+            try:
+                result = func(self, *args, **kwargs)
+                self.conn.commit()
+                return result
+            except Exception as e:
+                self.conn.rollback()
+                logger.error(f"Transaction failed in '{func.__name__}': {e}. Rolled back changes.")
+                raise
+    return wrapper
+
+
+def with_lock(func: Callable) -> Callable:
+    """
+    Decorator ensuring thread-safe read access to SQLite via self.lock.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs) -> Any:
+        with self.lock:
+            return func(self, *args, **kwargs)
     return wrapper
 
 
@@ -53,6 +67,7 @@ class Database:
         db_path = os.path.join(store_dir, sqlite_filename)
 
         db_exists = os.path.exists(db_path)
+        self.lock = threading.RLock()
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
 
@@ -148,12 +163,14 @@ class Database:
             (json.dumps(labels), email_id),
         )
 
+    @with_lock
     def get_latest_email_date_ms(self) -> int | None:
         """Returns the internal_date_ms of the most recent email in the database."""
         self.cursor.execute("SELECT MAX(internal_date_ms) FROM emails")
         row = self.cursor.fetchone()
         return row[0] if row and row[0] is not None else None
 
+    @with_lock
     def get_cached_body(self, email_id: str) -> str | None:
         """Returns the cached full body for an email, or None on a cache miss."""
         self.cursor.execute("SELECT body FROM emails_content WHERE id = ?", (email_id,))
@@ -181,6 +198,7 @@ class Database:
             VALUES (?, ?, (datetime('now', '+5 hours', '+30 minutes')))
         """, (key, value))
 
+    @with_lock
     def get_sync_state(self, key: str) -> str | None:
         """Retrieves a value from sync_state by key."""
         self.cursor.execute("SELECT value FROM sync_state WHERE key = ?", (key,))
@@ -188,6 +206,7 @@ class Database:
         return row[0] if row else None
     
     # |-- USED BY TOOLS --|
+    @with_lock
     def get_email_thread(self, thread_id: str) -> dict:
         """Fetch all emails in a thread, including cached body text.
 
@@ -214,6 +233,7 @@ class Database:
         ]
         return {"thread_id": thread_id, "emails": emails}
 
+    @with_lock
     def search_emails(
         self,
         keyword: str | None = None,
@@ -293,6 +313,7 @@ class Database:
             results.append(item)
         return results
 
+    @with_lock
     def get_total_emails(self) -> int:
         """Returns the total number of indexed emails in the database."""
         self.cursor.execute("SELECT COUNT(*) FROM emails")

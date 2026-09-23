@@ -152,6 +152,19 @@ class TestAPIServer(unittest.TestCase):
             self.assertIn("event: token", body)
             self.assertIn("event: done", body)
 
+    def test_08_frontend_static_serving(self):
+        """Verify that the frontend index.html and static assets are served at /."""
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/html", resp.headers.get("content-type", ""))
+        self.assertIn("InboxIQ", resp.text)
+        self.assertIn("app", resp.text)
+
+        # Verify static CSS asset
+        resp_css = self.client.get("/styles/main.css")
+        self.assertEqual(resp_css.status_code, 200)
+        self.assertIn("accent-green", resp_css.text)
+
 
 if __name__ == "__main__":
     unittest.main()

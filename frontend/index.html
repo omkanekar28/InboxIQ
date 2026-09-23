@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InboxIQ — Local Privacy-First Gmail Assistant</title>
+  <meta name="description" content="A private, local-first Gmail AI assistant powered by llama.cpp and Liquid AI models. All data stays strictly on your machine." />
+  
+  <!-- Modern Typography from Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- Design System Stylesheets -->
+  <link rel="stylesheet" href="./styles/main.css" />
+  <link rel="stylesheet" href="./styles/sidebar.css" />
+  <link rel="stylesheet" href="./styles/chat.css" />
+  <link rel="stylesheet" href="./styles/setup.css" />
+  <link rel="stylesheet" href="./styles/settings.css" />
+  <link rel="stylesheet" href="./styles/toast.css" />
+</head>
+<body>
+  <!-- Root App Mount -->
+  <div id="app"></div>
+
+  <!-- Toast Notification Mount -->
+  <div id="toast-container"></div>
+
+  <!-- Entry Script (Native ES Module) -->
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

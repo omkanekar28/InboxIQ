@@ -1,0 +1,257 @@
+/* =========================================================
+   Setup Wizard Styles — 4-Step Onboarding Stepper
+   ========================================================= */
+
+.setup-container {
+  max-width: 680px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px 24px;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.setup-logo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-green-glass);
+  border: 1px solid var(--border-glow);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent-green);
+  margin-bottom: 12px;
+}
+
+.setup-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.setup-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* Stepper Cards */
+.stepper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.step-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  padding: 20px;
+  transition: all var(--transition-normal);
+  position: relative;
+}
+
+.step-card.active {
+  border-color: var(--accent-green);
+  box-shadow: 0 0 16px rgba(0, 255, 65, 0.12);
+  background: #141714;
+}
+
+.step-card.completed {
+  border-color: rgba(0, 255, 65, 0.25);
+  background: #0f120f;
+  opacity: 0.85;
+}
+
+.step-card.locked {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.step-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.step-title-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.step-index-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #252525;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-card);
+  transition: all var(--transition-fast);
+}
+
+.step-card.active .step-index-badge {
+  background: var(--accent-green);
+  color: var(--text-inverse);
+  box-shadow: 0 0 10px var(--accent-green);
+}
+
+.step-card.completed .step-index-badge {
+  background: #112d11;
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+
+.step-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.step-status-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.step-status-chip.done {
+  color: var(--accent-green);
+  background: var(--accent-green-dim);
+  border: 1px solid var(--border-glow);
+}
+
+/* Step Content Body */
+.step-body {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-card);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.step-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.step-desc code {
+  font-family: var(--font-mono);
+  color: var(--accent-green);
+  background: rgba(0, 255, 65, 0.08);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+/* Drag & Drop Upload Zone */
+.dropzone {
+  border: 2px dashed #2a2a2a;
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: rgba(255, 255, 255, 0.01);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.dropzone:hover, .dropzone.dragover {
+  border-color: var(--accent-green);
+  background: var(--accent-green-glass);
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.15);
+}
+
+.dropzone-icon {
+  width: 32px;
+  height: 32px;
+  stroke: var(--text-muted);
+}
+
+.dropzone:hover .dropzone-icon {
+  stroke: var(--accent-green);
+}
+
+.dropzone-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.dropzone-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0f1c0f;
+  border: 1px solid var(--border-glow);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-green);
+}
+
+/* Step 3 Progress Box */
+.sync-progress-box {
+  background: #0d120d;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sync-status-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Step 4 Ready Celebration */
+.ready-box {
+  text-align: center;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.ready-dial-icon {
+  width: 56px;
+  height: 56px;
+  animation: omni-pulse 2s infinite ease-in-out;
+}
+
+@keyframes omni-pulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(0, 255, 65, 0.4)); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 16px rgba(0, 255, 65, 0.8)); }
+}

@@ -35,7 +35,7 @@ InboxIQ runs entirely on your local machine with automatic **GPU acceleration** 
 | **Sync & Auth** | **Google OAuth2 (Desktop App Flow)** | Secure PKCE/refresh token auth; full initial backfill + incremental sync using Gmail `historyId` |
 | **Agent Orchestration** | **Native Tool-Calling Loop** (`llm.py`) | Direct multi-turn loop via `llama-server` `/v1/chat/completions` with JSON tool schemas, dynamic date-aware system prompt, and reasoning fallback |
 | **API Layer** | **FastAPI** (`api/server.py`, `api/endpoints.py`) | Serves chat endpoints with SSE streaming (`/api/chat`), background sync (`/api/sync`), setup wizard (`/api/setup/*`), and hardware management (`/api/system/*`) |
-| **UI** | **React / Vite** (Omnitrix-themed dark mode) | Desktop-style chat interface, first-boot onboarding wizard, and interactive model toggle |
+| **UI** | **HTML5 / CSS / ES Modules** (Modern dark theme with green accents) | Desktop-style chat interface, first-boot onboarding wizard, and interactive model toggle |
 | **Packaging** | **PyInstaller / Nuitka** (Planned) | Bundles backend, static frontend, and `llama.cpp` runtime into a native installer |
 
 ---

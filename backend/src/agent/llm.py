@@ -415,7 +415,7 @@ class LLM:
 
                 words = re.findall(r"\S+|\s+", final_response)
                 for w in words:
-                    yield {"event": "token", "data": {"text": w}}
+                    yield {"event": "token", "data": {"text": w, "content": w}}
                     time.sleep(0.01)
 
                 yield {

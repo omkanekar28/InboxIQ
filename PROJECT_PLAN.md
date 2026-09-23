@@ -84,21 +84,28 @@
 - [x] **Automatic Code Reload**: Configured `watchfiles` in `main.py` with excludes for DB, log, and token files.
 - [x] **Integration Testing**: 7 integration tests in `backend/tests/integration/test_api_server.py` verifying all routes, mock LLM streaming, and validation.
 
-### Phase 5: Frontend & User Onboarding (IN PROGRESS)
-- [ ] **Frontend Generation & Integration**:
-  - [x] Detailed Lovable prompt with Omnitrix theme (black & electric green), subtle animations, and API specs.
-  - [ ] Integrate Lovable-generated React/Vite app into `frontend/`.
-- [ ] **First-Boot Setup Screen (Onboarding Wizard)**:
-  - [ ] Automatically displayed on first run if `/api/setup/status` indicates unconfigured state.
-  - [ ] **Step 1: Credentials Upload**: Drag-and-drop for `credentials.json` with Google Cloud setup guide.
-  - [ ] **Step 2: Authentication**: "Connect Gmail" button triggering the local OAuth consent flow.
-  - [ ] **Step 3: Initial Sync**: Live progress indicator displaying initial mailbox indexing.
-  - [ ] **Step 4: Completion**: Smooth transition to the primary chat interface once initial sync is complete.
-- [ ] **Main Chat Interface**:
-  - [ ] **Header Model Toggle**: Segmented toggle between `Lightweight (2.6B)` and `Balanced (8B)`.
-  - [ ] **Hardware Guard**: Automatically disables the `Balanced` option when `gpu_available == False`.
-  - [ ] **Chat Area**: Message stream with clean Markdown rendering, tool invocation badges/chips, latency display, and streaming cursor.
-  - [ ] **Manual Sync Button**: Status chip showing last sync time with on-demand "Sync Now" button and spinner.
+### Phase 5: Frontend & User Onboarding (COMPLETED)
+- [x] **Frontend Architecture & Modern Dark Design System**:
+  - [x] Native zero-build Single-Page Application using modern ES Modules, HTML5, and Vanilla CSS tokens.
+  - [x] High-contrast dark aesthetic (`#0A0A0A` background, `#00FF41` electric green accents, Inter & JetBrains Mono typography).
+  - [x] Custom animations: glowing status emblem, typing indicator dots, message slide-ins, and blinking streaming cursor.
+  - [x] Centralized API client (`src/api.js`) and reactive store (`src/store.js`) with automatic health & sync polling.
+  - [x] Mounted directly inside FastAPI (`app.mount('/', ...)`) so `python main.py` serves both UI and API at `http://localhost:8000`.
+- [x] **First-Boot Setup Screen (Onboarding Wizard)**:
+  - [x] Auto-detects unconfigured states via `/api/setup/status` and directs user to `/setup`.
+  - [x] **Step 1: Credentials Upload**: Drag-and-drop file dropzone for `credentials.json` with schema validation.
+  - [x] **Step 2: Authentication**: "Connect Gmail" button triggering the local OAuth consent flow with live polling.
+  - [x] **Step 3: Initial Sync**: Live progress indicator displaying mailbox indexing counter.
+  - [x] **Step 4: Completion**: Celebration card with glowing dial and "Start Chatting" button.
+- [x] **Main Chat Interface (`/chat`)**:
+  - [x] Real-time SSE streaming reader with blinking cursor `▌` and progressive token rendering.
+  - [x] Tool execution pills (displaying `search_emails` or `get_email_thread` with JSON arguments).
+  - [x] Interactive empty state with suggested query chips and glowing dial.
+  - [x] Top bar active model badge, LLM readiness indicator, and manual sync action button with spinner.
+- [x] **Settings Page (`/settings`)**:
+  - [x] Model switcher between `Lightweight (2.6B)` and `Balanced (8B)`.
+  - [x] **Hardware Guard**: Automatically disables the `Balanced` option when `gpu_available == False`, displaying a warning notice.
+  - [x] Monospace terminal-style hardware profile readout (GPU name, VRAM, and context window).
 
 ### Phase 6: Packaging & Distribution (PLANNED)
 - [ ] Package backend and static frontend with PyInstaller or Nuitka.
