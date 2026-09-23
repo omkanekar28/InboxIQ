@@ -34,18 +34,18 @@ export function renderSettingsPage(container) {
                   <span>Lightweight</span>
                   <span class="status-dot green" id="dot-lightweight" style="width: 6px; height: 6px;"></span>
                 </div>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Liquid AI LFM2.5 2.6B</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Liquid AI LFM2.5 1.2B Thinking</div>
               </div>
-              <span class="model-param-badge">2.6B Params</span>
+              <span class="model-param-badge">1.2B Params</span>
             </div>
 
             <p class="model-desc">
-              Ultra-fast local model with rapid tool-calling capabilities. Optimized for quick searches, 
+              Ultra-fast local model with native thinking and rapid tool-calling capabilities. Optimized for quick searches, 
               low latency, and standard CPU or laptop hardware.
             </p>
 
             <div class="model-specs">
-              <div class="spec-item"><span>VRAM / RAM:</span> <span>~2.2 GB</span></div>
+              <div class="spec-item"><span>VRAM / RAM:</span> <span>~1.2 GB</span></div>
               <div class="spec-item"><span>Hardware Req:</span> <span>Any CPU or GPU</span></div>
               <div class="spec-item"><span>Context:</span> <span>16,000 tokens</span></div>
             </div>
@@ -63,18 +63,18 @@ export function renderSettingsPage(container) {
                   <span>Balanced</span>
                   <span class="status-dot" id="dot-balanced" style="width: 6px; height: 6px;"></span>
                 </div>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Liquid AI LFM2.5 8B MoE</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Liquid AI LFM2.5 2.6B</div>
               </div>
-              <span class="model-param-badge">8B-A1B Params</span>
+              <span class="model-param-badge">2.6B Params</span>
             </div>
 
             <p class="model-desc">
-              Hybrid Mixture-of-Experts architecture. Delivers deep multi-turn reasoning, complex thread 
+              Efficient multi-turn reasoning and synthesis model. Delivers deep multi-turn reasoning, complex thread 
               synthesis, and advanced query disambiguation.
             </p>
 
             <div class="model-specs">
-              <div class="spec-item"><span>VRAM Required:</span> <span>~6.5 GB Dedicated</span></div>
+              <div class="spec-item"><span>VRAM Required:</span> <span>~2.6 GB Dedicated</span></div>
               <div class="spec-item"><span>Hardware Req:</span> <span>NVIDIA GPU (CUDA)</span></div>
               <div class="spec-item"><span>Context:</span> <span>16,000 tokens</span></div>
             </div>

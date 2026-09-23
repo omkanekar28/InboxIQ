@@ -168,7 +168,7 @@ class LLM:
 
         if new_model_type == "balanced" and not self._has_gpu:
             raise ValueError(
-                "Balanced (8B) model requires an NVIDIA GPU for responsive performance."
+                "Balanced (2.6B) model requires an NVIDIA GPU for responsive performance."
             )
 
         if self._ready and self._model_type == new_model_type:

@@ -16,10 +16,10 @@ InboxIQ runs entirely on your local machine with automatic **GPU acceleration** 
 - 🔒 **100% Local & Private**: No data leaves your machine. No external cloud LLM tokens or API subscriptions required.
 - ⚡ **Hardware-Adaptive**: Automatically detects NVIDIA GPUs via CUDA driver hooks and offloads layers (`-ngl -1`), or falls back to multi-threaded CPU inference.
 - 🧠 **Dual-Model Architecture**:
-  - **Balanced**: `LFM2.5-2.6B-Q4_K_M` — Efficient multi-turn reasoning and synthesis model.
-  - **Lightweight**: `LFM2.5-1.2B-Thinking-Q4_K_M` — Ultra-fast, minimal-memory model with native thinking and tool calling.
+  - **Balanced (`2.6B`)**: `LFM2.5-2.6B-Q4_K_M` — Recommended for **higher accuracy and deep reasoning** across complex email threads.
+  - **Lightweight (`1.2B`)**: `LFM2.5-1.2B-Thinking-Q4_K_M` — Recommended for **maximum speed and low latency** on any CPU or laptop.
 - 🎯 **Zero-Bloat Orchestration**: Built directly on native OpenAI-compatible tool calling exposed by `llama-server`. Eliminates heavy graph frameworks (like LangGraph) and query classification layers.
-- 🔄 **Efficient Smart Sync**: Full metadata backfill with incremental sync using Gmail `historyId`. Message bodies are fetched and cached on-demand when threads are inspected, saving bandwidth and disk space.
+- 🔄 **Efficient Smart Sync**: Indexes the latest 1,000 emails for fast local search, with incremental sync using Gmail `historyId`. Message bodies are fetched and cached on-demand when threads are inspected, saving bandwidth and disk space.
 - 🔌 **FastAPI Backend with SSE Streaming**: Token-by-token streaming response, background sync worker with status tracking, hardware profiling, and live model toggling.
 
 ---
@@ -28,7 +28,7 @@ InboxIQ runs entirely on your local machine with automatic **GPU acceleration** 
 
 | Layer | Choice | Details & Rationale |
 |---|---|---|
-| **LLM Models** | **Liquid AI LFM2.5** (GGUF Q4_K_M) | `2.6B` (balanced, multi-turn reasoning) or `1.2B-Thinking` (lightweight, ultra-fast with native thinking) |
+| **LLM Models** | **Liquid AI LFM2.5** (GGUF Q4_K_M) | `2.6B` (Balanced: higher accuracy & deep reasoning) or `1.2B-Thinking` (Lightweight: maximum speed & low latency) |
 | **LLM Runtime** | **llama.cpp** (`llama-server.exe`, b11050) | Prebuilt Windows binary; supports CUDA 13.4 with full layer offload (`-ngl -1`) or CPU (`-ngl 0`); 16K context window (`-c 16000`) and 512 batch size (`-b 512`) |
 | **Configuration** | **Pydantic Settings** (`pydantic-settings`) | Type-safe settings with environment variable overrides and sensible defaults in `settings.py` |
 | **Local Store** | **SQLite** (`database.py`) | Indexes `emails` metadata and caches full thread bodies in `emails_content`, with sanitized text & HTML-entity decoding |
@@ -85,7 +85,7 @@ Implemented in `backend/src/sync/gmail_sync.py`:
 
 1. **Initial Sync (First Boot)**:
    - Authenticates via OAuth2 (`credentials.json` &rarr; `token.json`).
-   - Paginates messages via Gmail API (`users.messages.list`).
+   - Paginates messages via Gmail API (`users.messages.list`) up to the **latest 1,000 emails** (configured by `GMAIL_SYNC_MAX_RECENT_EMAILS`).
    - Extracts metadata: `id`, `thread_id`, `sender`, `recipient`, `subject`, `snippet`, `labels`, `date`, and `internal_date_ms`.
    - Batch inserts records into SQLite `emails` table.
    - Records the latest `historyId` in the `sync_state` table.
@@ -209,6 +209,16 @@ Download **`InboxIQ-Setup.exe`** directly from this repository:
    - **Step 2 (Authentication)**: Click **"Connect Gmail Account"** to sign into your Google account and grant read-only inbox access. *(Ensure your email has been whitelisted as described above).*
    - **Step 3 (Initial Sync)**: Click **"Start Indexing"** to sync recent email metadata into your local SQLite store (shows live count & percentage).
    - **Step 4**: Click **"Start Chatting"**!
+
+> [!NOTE]
+> ### 📬 Email Indexing Scope (Latest 1,000 Emails)
+> To ensure rapid setup, minimal disk usage, and responsive local queries, InboxIQ indexes your **latest 1,000 emails** by default. As a result, queries regarding **very old email conversations** that precede this 1,000-email window cannot be retrieved or answered.
+
+> [!TIP]
+> ### 💡 Model Recommendation
+> You can switch between models anytime in the in-app **Settings** menu:
+> - **Balanced (2.6B)**: Choose this for **higher accuracy and deep reasoning** across complex multi-turn threads (recommended if you have an NVIDIA GPU).
+> - **Lightweight (1.2B Thinking)**: Choose this for **maximum speed and responsiveness**, ideal for standard CPUs and everyday hardware.
 
 > **Native Window & System Tray**: Clicking the window's close (`X`) button hides InboxIQ quietly to your Windows taskbar notification tray so your loaded AI model and background indexing remain instantly available without re-loading overhead. Double-click the tray icon anytime to restore the window, or right-click and select **Quit InboxIQ** to completely exit.
 > 

@@ -34,8 +34,8 @@
 - **Rationale**: Downloading full bodies for thousands of emails consumes gigabytes of storage, causes excessive API quota consumption, and drastically increases initial setup time. Thread caching provides instant response for repeated inquiries while keeping the local database lean.
 
 ### 3. Dynamic Hardware Guard for Model Switching
-- **Decision**: Dynamically detect VRAM and GPU capabilities via `nvidia-smi` and direct CUDA driver bindings. If no GPU is available, the UI disables the `Balanced (8B)` option and forces `Lightweight (2.6B)`.
-- **Rationale**: Running 8B models on CPU results in sluggish token generation (~2-4 tokens/s) which hurts user experience, whereas 2.6B runs comfortably on CPU at high speeds.
+- **Decision**: Dynamically detect VRAM and GPU capabilities via `nvidia-smi` and direct CUDA driver bindings. If no GPU is available, the UI disables the `Balanced (2.6B)` option and forces `Lightweight (1.2B-Thinking)`.
+- **Rationale**: Running higher parameter models on CPU can impact user experience, whereas 1.2B-Thinking runs comfortably on CPU at high speeds.
 
 ### 4. Background Sync Job Tracking
 - **Decision**: Decouple the `/api/sync` trigger from the sync execution using background worker threads and thread-safe job state dictionaries (`idle`, `running`, `completed`, `failed`).
@@ -75,7 +75,7 @@
   - `POST /api/sync`: Triggers background incremental or full Gmail sync via worker threads with job tracking.
   - `GET /api/sync/status`: Reports sync state, timestamp of last sync, total indexed emails, and live job status.
   - `GET /api/system/hardware`: Returns hardware profile (GPU availability, device name, VRAM, and active model) via `nvidia-smi` hooks.
-  - `POST /api/system/model`: Dynamically toggles active model between `lightweight` (`2.6B`) and `balanced` (`8B`) with process PID tracking; rejects `balanced` if no GPU is available.
+  - `POST /api/system/model`: Dynamically toggles active model between `lightweight` (`1.2B-Thinking`) and `balanced` (`2.6B`) with process PID tracking; rejects `balanced` if no GPU is available.
   - `GET /api/setup/status`: Checks if `credentials.json` exists, user is authenticated (`token.json`), models are downloaded, and initial sync is completed.
   - `POST /api/setup/credentials`: Accepts uploaded `credentials.json` (multipart or JSON body) and validates schema.
   - `POST /api/setup/auth`: Triggers the Google OAuth browser consent flow and binds active session.
@@ -103,7 +103,7 @@
   - [x] Interactive empty state with suggested query chips and glowing dial.
   - [x] Top bar active model badge, LLM readiness indicator, and manual sync action button with spinner.
 - [x] **Settings Page (`/settings`)**:
-  - [x] Model switcher between `Lightweight (2.6B)` and `Balanced (8B)`.
+  - [x] Model switcher between `Lightweight (1.2B-Thinking)` and `Balanced (2.6B)`.
   - [x] **Hardware Guard**: Automatically disables the `Balanced` option when `gpu_available == False`, displaying a warning notice.
   - [x] Monospace terminal-style hardware profile readout (GPU name, VRAM, and context window).
 
