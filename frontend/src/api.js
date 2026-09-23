@@ -22,6 +22,16 @@ export const api = {
   },
 
   /**
+   * System startup and boot progress probe.
+   * GET /api/system/startup
+   */
+  async getStartupStatus() {
+    const res = await fetch(`${BASE_URL}/api/system/startup`);
+    if (!res.ok) throw new Error(`Startup check failed: ${res.statusText}`);
+    return await res.json();
+  },
+
+  /**
    * SSE Streaming Chat completion endpoint.
    * POST /api/chat { messages, stream: true }
    */

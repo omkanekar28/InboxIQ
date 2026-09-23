@@ -50,35 +50,233 @@ sync_job_state: dict[str, Any] = {
     "error": None,
 }
 
+# Startup progress tracking
+startup_lock = threading.Lock()
+startup_state: dict[str, Any] = {
+    "completed": False,
+    "current_step": "init",
+    "message": "Initializing InboxIQ services...",
+    "steps": [
+        {"id": "database", "label": "SQLite Database & Local Stores", "status": "pending", "message": "Waiting...", "progress": None},
+        {"id": "models", "label": "Liquid AI Models (GGUF)", "status": "pending", "message": "Waiting...", "progress": None},
+        {"id": "runtime", "label": "llama.cpp Hardware Engine", "status": "pending", "message": "Waiting...", "progress": None},
+        {"id": "server", "label": "Local LLM Server Runtime", "status": "pending", "message": "Waiting...", "progress": None},
+    ],
+    "error": None,
+}
+
+
+def _format_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    elif num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f} KB"
+    elif num_bytes < 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def _format_speed(speed_bytes_sec: float) -> str:
+    if speed_bytes_sec <= 0:
+        return ""
+    if speed_bytes_sec < 1024 * 1024:
+        return f"{speed_bytes_sec / 1024:.1f} KB/s"
+    return f"{speed_bytes_sec / (1024 * 1024):.1f} MB/s"
+
+
+def update_startup_step(
+    step_id: str,
+    status_val: str,
+    message: Optional[str] = None,
+    progress: Optional[dict] = None,
+):
+    with startup_lock:
+        startup_state["current_step"] = step_id
+        if message:
+            startup_state["message"] = message
+        for step in startup_state["steps"]:
+            if step["id"] == step_id:
+                step["status"] = status_val
+                if message:
+                    step["message"] = message
+                if progress is not None:
+                    step["progress"] = progress
+                elif status_val == "completed":
+                    if step.get("progress"):
+                        step["progress"]["percent"] = 100
+                break
+
+
+def _init_heavy_services_worker():
+    global llm
+    logger.info("Starting background setup for models, runtime, and LLM server...")
+
+    # Step 2: Models
+    try:
+        update_startup_step("models", "in_progress", "Checking and verifying AI models...")
+
+        def _on_model_progress(data: dict):
+            downloaded = data.get("downloaded", 0)
+            total = data.get("total", 0)
+            speed = data.get("speed", 0.0)
+            m_num = data.get("model_num", 1)
+            m_total = data.get("total_models", 2)
+            m_type = data.get("model_type", "")
+            m_name = data.get("filename", "")
+
+            pct = round((downloaded / total * 100), 1) if total > 0 else 0
+            d_str = _format_size(downloaded)
+            t_str = _format_size(total) if total > 0 else "..."
+            sp_str = _format_speed(speed)
+
+            msg = f"Downloading {m_type} ({m_num}/{m_total}): {d_str} / {t_str}"
+            if sp_str:
+                msg += f" • {sp_str}"
+
+            progress_info = {
+                "percent": pct,
+                "downloaded_bytes": downloaded,
+                "total_bytes": total,
+                "downloaded_str": d_str,
+                "total_str": t_str,
+                "speed_str": sp_str,
+                "detail": f"{m_name} ({m_num}/{m_total})",
+            }
+            update_startup_step("models", "in_progress", msg, progress=progress_info)
+
+        from bootstrap.setup_models import setup_models
+        setup_models(
+            balanced_model_url=settings.MODEL_DOWNLOAD_URL_BALANCED,
+            lightweight_model_url=settings.MODEL_DOWNLOAD_URL_LIGHTWEIGHT,
+            models_store_dir=settings.MODEL_STORE_DIR,
+            progress_callback=_on_model_progress,
+        )
+        update_startup_step("models", "completed", "AI models verified and ready.", progress={"percent": 100})
+    except Exception as e:
+        logger.error(f"Error verifying models: {e}")
+        with startup_lock:
+            startup_state["error"] = f"Model verification error: {e}"
+        update_startup_step("models", "failed", str(e))
+        return
+
+    # Step 3: Runtime
+    try:
+        update_startup_step("runtime", "in_progress", "Checking llama.cpp runtime and GPU acceleration...")
+        from bootstrap.setup_llm_server import install_llama_runtime, is_gpu_available
+        gpu_avail = is_gpu_available()
+        binaries_url = (
+            settings.LLAMA_CPP_CUDA_BINARIES_URL
+            if gpu_avail
+            else settings.LLAMA_CPP_CPU_BINARIES_URL
+        )
+
+        def _on_runtime_progress(downloaded, total, speed=0.0, status="downloading"):
+            pct = round((downloaded / total * 100), 1) if total > 0 else 0
+            d_str = _format_size(downloaded)
+            t_str = _format_size(total) if total > 0 else "..."
+            sp_str = _format_speed(speed)
+
+            if status == "extracting":
+                msg = "Extracting llama.cpp runtime archive..."
+                p_info = {
+                    "percent": 100,
+                    "downloaded_bytes": total,
+                    "total_bytes": total,
+                    "downloaded_str": t_str,
+                    "total_str": t_str,
+                    "speed_str": "",
+                    "detail": "Extracting runtime...",
+                }
+            elif status == "installed":
+                msg = "llama.cpp runtime verified."
+                p_info = {
+                    "percent": 100,
+                    "downloaded_bytes": total,
+                    "total_bytes": total,
+                    "downloaded_str": t_str,
+                    "total_str": t_str,
+                    "speed_str": "",
+                    "detail": "Installed",
+                }
+            else:
+                msg = f"Downloading llama.cpp runtime: {d_str} / {t_str}"
+                if sp_str:
+                    msg += f" • {sp_str}"
+                p_info = {
+                    "percent": pct,
+                    "downloaded_bytes": downloaded,
+                    "total_bytes": total,
+                    "downloaded_str": d_str,
+                    "total_str": t_str,
+                    "speed_str": sp_str,
+                    "detail": "llama.cpp runtime binaries",
+                }
+            update_startup_step("runtime", "in_progress", msg, progress=p_info)
+
+        install_llama_runtime(
+            url=binaries_url,
+            extract_dir=settings.LLAMA_CPP_BINARIES_STORE_DIR,
+            progress_callback=_on_runtime_progress,
+            show_progress=False,
+        )
+        accel_desc = "CUDA GPU Acceleration" if gpu_avail else "CPU Multi-Threading"
+        update_startup_step("runtime", "completed", f"llama.cpp engine ready ({accel_desc}).", progress={"percent": 100})
+    except Exception as e:
+        logger.error(f"Error installing llama runtime: {e}")
+        with startup_lock:
+            startup_state["error"] = f"Runtime error: {e}"
+        update_startup_step("runtime", "failed", str(e))
+        return
+
+    # Step 4: Local LLM Server
+    try:
+        update_startup_step("server", "in_progress", "Launching llama-server and loading model weights into VRAM...")
+        llm = LLM(model_type=settings.MODEL_TYPE)
+        llm.start()
+        update_startup_step("server", "completed", "LLM server active and healthy on port 8001.")
+    except Exception as e:
+        logger.error(f"Error starting LLM server: {e}")
+        with startup_lock:
+            startup_state["error"] = f"Server launch error: {e}"
+        update_startup_step("server", "failed", str(e))
+        return
+
+    with startup_lock:
+        startup_state["completed"] = True
+        startup_state["current_step"] = "ready"
+        startup_state["message"] = "All InboxIQ services are fully initialized!"
+        startup_state["error"] = None
+    logger.info("InboxIQ background initialization completed successfully.")
+
 
 def init_services() -> None:
-    """Initialize application singletons and start LLM runtime."""
-    global db, gmail_sync, llm
+    """Initialize lightweight database services immediately, then spawn background thread for heavy LLM setup."""
+    global db, gmail_sync
     logger.info("Initializing InboxIQ backend services...")
 
-    # 1. Initialize SQLite Database
-    db = Database(
-        store_dir=settings.DB_STORE_DIR,
-        sqlite_filename=settings.DB_SQLITE_FILENAME,
-        search_email_fields=settings.SEARCH_EMAIL_FIELDS,
-        email_thread_fields=settings.EMAIL_THREAD_FIELDS,
-    )
-
-    # 2. Initialize Gmail Sync Client (non-blocking if not yet authenticated)
-    gmail_sync = GmailSync(db=db, auto_auth=True)
-
-    # 3. Bind tools to Database and Sync
-    init_tools(db=db, gmail_sync=gmail_sync)
-
-    # 4. Initialize and start LLM runtime
-    llm = LLM(model_type=settings.MODEL_TYPE)
+    # Step 1: Initialize Database & Sync (fast, ~15ms)
     try:
-        llm.setup()
-        logger.info("Starting llama-server on startup...")
-        llm.start()
-        logger.info("Llama-server started and healthy.")
+        update_startup_step("database", "in_progress", "Initializing SQLite database & stores...")
+        db = Database(
+            store_dir=settings.DB_STORE_DIR,
+            sqlite_filename=settings.DB_SQLITE_FILENAME,
+            search_email_fields=settings.SEARCH_EMAIL_FIELDS,
+            email_thread_fields=settings.EMAIL_THREAD_FIELDS,
+        )
+        gmail_sync = GmailSync(db=db, auto_auth=True)
+        init_tools(db=db, gmail_sync=gmail_sync)
+        update_startup_step("database", "completed", "Database ready and schema verified.")
     except Exception as e:
-        logger.error(f"Error starting LLM server during startup: {e}")
+        logger.error(f"Error initializing database: {e}")
+        with startup_lock:
+            startup_state["error"] = f"Database error: {e}"
+        update_startup_step("database", "failed", str(e))
+        return
+
+    # Spawn background thread for heavy tasks (models, runtime, LLM server)
+    t = threading.Thread(target=_init_heavy_services_worker, daemon=True)
+    t.start()
 
 
 def shutdown_services() -> None:
@@ -102,6 +300,12 @@ def health_check():
         "llm_ready": llm.is_ready if llm else False,
         "active_model": llm.model_type if llm else settings.MODEL_TYPE,
     }
+
+
+@router.get("/api/system/startup")
+def get_startup_status():
+    with startup_lock:
+        return dict(startup_state)
 
 
 # ---------------------------------------------------------

@@ -66,6 +66,16 @@ def install_llama_runtime(
                         f"Llama runtime is already installed at: {runtime_filepath}"
                     )
                     os.environ["LLM_SERVER_BINARY"] = str(runtime_filepath)
+                    if progress_callback:
+                        try:
+                            progress_callback(100, 100, 0.0, "installed")
+                        except TypeError:
+                            try:
+                                progress_callback(100, 100)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
                     return runtime_filepath
             except Exception:
                 pass
@@ -93,6 +103,8 @@ def install_llama_runtime(
                 downloaded = 0
                 last_logged = 0
                 log_step = 10 * 1024 * 1024
+                start_time = time.time()
+                last_callback_time = 0.0
 
                 with temp_zip_path.open("wb") as f:
                     iterator = response.iter_content(chunk_size=64 * 1024)
@@ -113,12 +125,21 @@ def install_llama_runtime(
                         f.write(chunk)
                         downloaded += len(chunk)
 
-                        if progress_callback:
+                        now = time.time()
+                        if progress_callback and (
+                            now - last_callback_time >= 0.15
+                            or (total_size and downloaded >= total_size)
+                        ):
+                            last_callback_time = now
+                            elapsed = now - start_time
+                            speed = downloaded / elapsed if elapsed > 0 else 0.0
                             try:
-                                progress_callback(
-                                    downloaded,
-                                    total_size,
-                                )
+                                progress_callback(downloaded, total_size, speed, "downloading")
+                            except TypeError:
+                                try:
+                                    progress_callback(downloaded, total_size)
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
 
@@ -149,6 +170,16 @@ def install_llama_runtime(
 
             # Extract
             logger.info("Extracting runtime archive...")
+            if progress_callback:
+                try:
+                    progress_callback(total_size, total_size, 0.0, "extracting")
+                except TypeError:
+                    try:
+                        progress_callback(total_size, total_size)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
             with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
                 zip_ref.extractall(extract_dir)

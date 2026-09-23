@@ -165,6 +165,94 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(resp_css.status_code, 200)
         self.assertIn("accent-green", resp_css.text)
 
+    def test_09_startup_status(self):
+        """Verify GET /api/system/startup returns boot steps and progress info."""
+        resp = self.client.get("/api/system/startup")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("completed", data)
+        self.assertIn("steps", data)
+        self.assertIsInstance(data["steps"], list)
+        self.assertEqual(len(data["steps"]), 4)
+        step_ids = [s["id"] for s in data["steps"]]
+        self.assertIn("database", step_ids)
+        self.assertIn("models", step_ids)
+        self.assertIn("runtime", step_ids)
+        self.assertIn("server", step_ids)
+
+    def test_10_startup_progress_tracking(self):
+        """Verify update_startup_step stores progress dict and GET returns it."""
+        progress_data = {
+            "percent": 45.5,
+            "downloaded_bytes": 1024 * 1024 * 500,
+            "total_bytes": 1024 * 1024 * 1024,
+            "downloaded_str": "500.0 MB",
+            "total_str": "1.00 GB",
+            "speed_str": "25.0 MB/s",
+            "detail": "Model 1/2: test.gguf",
+        }
+        endpoints_module.update_startup_step(
+            "models",
+            "in_progress",
+            message="Downloading test model...",
+            progress=progress_data,
+        )
+
+        resp = self.client.get("/api/system/startup")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        models_step = next(s for s in data["steps"] if s["id"] == "models")
+        self.assertEqual(models_step["status"], "in_progress")
+        self.assertEqual(models_step["message"], "Downloading test model...")
+        self.assertIsNotNone(models_step["progress"])
+        self.assertEqual(models_step["progress"]["percent"], 45.5)
+        self.assertEqual(models_step["progress"]["speed_str"], "25.0 MB/s")
+        self.assertEqual(models_step["progress"]["total_str"], "1.00 GB")
+
+        # Test completion sets 100%
+        endpoints_module.update_startup_step(
+            "models",
+            "completed",
+            message="Models ready.",
+        )
+        resp2 = self.client.get("/api/system/startup")
+        models_step2 = next(s for s in resp2.json()["steps"] if s["id"] == "models")
+        self.assertEqual(models_step2["status"], "completed")
+        self.assertEqual(models_step2["progress"]["percent"], 100)
+
+    def test_11_download_file_with_progress_callback(self):
+        """Verify download_file triggers progress_callback with byte counts and speed."""
+        from utils.file_utils import download_file
+
+        mock_chunks = [b"A" * 65536, b"B" * 65536, b"C" * 32768]
+        total_len = sum(len(c) for c in mock_chunks)
+
+        mock_resp = MagicMock()
+        mock_resp.headers = {"content-length": str(total_len)}
+        mock_resp.iter_content.return_value = iter(mock_chunks)
+        mock_resp.raise_for_status.return_value = None
+
+        progress_calls = []
+
+        def callback(downloaded, total, speed=0.0):
+            progress_calls.append((downloaded, total, speed))
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch("requests.get", return_value=mock_resp):
+                out_path = download_file(
+                    url="http://example.com/test_model.gguf",
+                    output_dir=tmp_dir,
+                    show_progress=False,
+                    progress_callback=callback,
+                )
+
+                self.assertTrue(out_path.exists())
+                self.assertEqual(out_path.stat().st_size, total_len)
+                self.assertGreater(len(progress_calls), 0)
+                final_call = progress_calls[-1]
+                self.assertEqual(final_call[0], total_len)  # downloaded == total
+                self.assertEqual(final_call[1], total_len)
+
 
 if __name__ == "__main__":
     unittest.main()

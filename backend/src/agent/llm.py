@@ -67,13 +67,18 @@ class LLM:
     def is_ready(self) -> bool:
         return self._ready
 
-    def setup(self) -> None:
+    def setup(
+        self,
+        models_progress_callback: Optional[Any] = None,
+        runtime_progress_callback: Optional[Any] = None,
+    ) -> None:
         """Download both GGUF models and install the llama-cpp runtime."""
         logger.info("LLM.setup() — downloading models...")
         setup_models(
             balanced_model_url=settings.MODEL_DOWNLOAD_URL_BALANCED,
             lightweight_model_url=settings.MODEL_DOWNLOAD_URL_LIGHTWEIGHT,
             models_store_dir=settings.MODEL_STORE_DIR,
+            progress_callback=models_progress_callback,
         )
 
         runtime_url = (
@@ -89,6 +94,7 @@ class LLM:
         install_llama_runtime(
             url=runtime_url,
             extract_dir=settings.LLAMA_CPP_BINARIES_STORE_DIR,
+            progress_callback=runtime_progress_callback,
         )
         logger.info("LLM.setup() — done.")
 

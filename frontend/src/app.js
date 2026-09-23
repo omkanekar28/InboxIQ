@@ -1,14 +1,10 @@
-/**
- * =========================================================
- * InboxIQ — Main Application Orchestrator & Router
- * =========================================================
- */
-
 import { store } from "./store.js";
+import { api } from "./api.js";
 import { renderSidebar } from "./components/sidebar.js";
 import { renderChatPage } from "./pages/chatPage.js";
 import { renderSetupPage } from "./pages/setupPage.js";
 import { renderSettingsPage } from "./pages/settingsPage.js";
+import { renderStartupPage } from "./pages/startupPage.js";
 
 class App {
   constructor() {
@@ -16,10 +12,39 @@ class App {
     this.sidebarContainer = null;
     this.viewportContainer = null;
     this.currentCleanups = [];
+    this.hasBooted = false;
   }
 
-  init() {
-    // 1. Build Base Layout Shell
+  async init() {
+    // 1. Check startup state immediately
+    try {
+      const startup = await api.getStartupStatus();
+      if (startup && !startup.completed) {
+        // Show live startup screen until services are ready
+        const cleanup = renderStartupPage(this.appEl, () => {
+          if (cleanup) cleanup();
+          this.bootApp();
+        });
+        return;
+      }
+    } catch (_) {
+      // If endpoint not reachable yet, show startup screen to poll
+      const cleanup = renderStartupPage(this.appEl, () => {
+        if (cleanup) cleanup();
+        this.bootApp();
+      });
+      return;
+    }
+
+    // Already completed or ready
+    this.bootApp();
+  }
+
+  bootApp() {
+    if (this.hasBooted) return;
+    this.hasBooted = true;
+
+    // Build Base Layout Shell
     this.appEl.innerHTML = `
       <div id="sidebar-mount"></div>
       <main class="main-viewport" id="viewport-mount"></main>
@@ -32,25 +57,25 @@ class App {
     this.viewportContainer = this.appEl.querySelector("#viewport-mount");
     const offlineBanner = this.appEl.querySelector("#offline-banner");
 
-    // 2. Render Sidebar
+    // Render Sidebar
     renderSidebar(this.sidebarContainer);
 
-    // 3. Subscribe to Route Changes
+    // Subscribe to Route Changes
     store.subscribe("route", (route) => {
       this.navigate(route);
     });
 
-    // 4. Subscribe to Backend Connectivity
+    // Subscribe to Backend Connectivity
     store.subscribe("backendOnline", (online) => {
       if (offlineBanner) {
         offlineBanner.style.display = online ? "none" : "block";
       }
     });
 
-    // 5. Start Background Polling
+    // Start Background Polling
     store.startPolling();
 
-    // 6. Check Initial Setup State
+    // Check Initial Setup State
     this.checkInitialRoute();
   }
 

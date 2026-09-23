@@ -1,0 +1,243 @@
+/* =========================================================
+   Startup Screen Styles — System Bootloader & Live Progress
+   ========================================================= */
+
+.startup-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-primary);
+  position: relative;
+  z-index: 100;
+  padding: 24px;
+}
+
+.startup-card {
+  max-width: 540px;
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-glow);
+  border-radius: 12px;
+  padding: 36px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 0 30px rgba(0, 255, 65, 0.12), 0 16px 40px rgba(0, 0, 0, 0.8);
+  animation: startup-fade-in 300ms ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes startup-fade-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.startup-logo {
+  margin-bottom: 20px;
+}
+
+.startup-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.startup-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.startup-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Steps List */
+.startup-steps {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.startup-step-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #0f130f;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  transition: all var(--transition-fast);
+}
+
+.startup-step-row.in_progress {
+  border-color: var(--accent-green);
+  background: rgba(0, 255, 65, 0.04);
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.1);
+}
+
+.startup-step-row.completed {
+  border-color: rgba(0, 255, 65, 0.25);
+  background: #0b110b;
+}
+
+.startup-step-row.failed {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.step-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-right: 14px;
+}
+
+.step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.step-message {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.startup-step-row.in_progress .step-message {
+  color: var(--accent-green);
+}
+
+/* Download Progress Bar Styles */
+.step-progress-wrapper {
+  margin-top: 8px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.step-progress-track {
+  width: 100%;
+  height: 6px;
+  background: #111a13;
+  border: 1px solid rgba(0, 255, 65, 0.25);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.step-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00bb30 0%, #00ff41 100%);
+  border-radius: 4px;
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.6), 0 0 3px #00ff41;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.step-progress-fill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  animation: progress-shimmer 1.8s infinite linear;
+}
+
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.step-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.step-progress-size {
+  color: var(--text-secondary);
+}
+
+.step-progress-speed {
+  color: var(--accent-green);
+  font-weight: 500;
+}
+
+.step-progress-pct {
+  color: var(--accent-green);
+  font-weight: 700;
+}
+
+.step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.step-indicator .check {
+  color: var(--accent-green);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.step-indicator .cross {
+  color: var(--color-danger);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.step-indicator .pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-subtle);
+}
+
+/* Overall live status footer */
+.startup-footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.live-status-pill {
+  font-family: var(--font-mono);
+  color: var(--accent-green);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
