@@ -10,8 +10,8 @@
 - **Local-first & Zero Cloud Costs**: No email content or LLM tokens ever leave the local machine. Zero subscriptions or paid API keys.
 - **Hardware-Adaptive Inference**: Automatically detect NVIDIA GPUs via CUDA driver hooks (`-ngl -1`) and fallback smoothly to multi-threaded CPU execution.
 - **Dual-Model Strategy**:
-  - **Balanced**: `LFM2.5-8B-A1B-Q4_K_M` (Liquid AI hybrid MoE for deep multi-turn reasoning and complex synthesis).
-  - **Lightweight**: `LFM2.5-2.6B-Q4_K_M` (ultra-fast, memory-efficient local model with strong native tool calling).
+  - **Balanced**: `LFM2.5-2.6B-Q4_K_M` (Liquid AI for efficient multi-turn reasoning and synthesis).
+  - **Lightweight**: `LFM2.5-1.2B-Thinking-Q4_K_M` (ultra-fast, minimal-memory model with native thinking and tool calling).
 - **Accurate & Grounded**: Answers are strictly backed by deterministic tool execution against indexed local SQLite data, eliminating hallucinations.
 - **Zero-Bloat Orchestration**: Built directly on native OpenAI-compatible tool calling exposed by `llama-server.exe`, avoiding heavy graph frameworks (e.g. LangGraph) and redundant query classification layers.
 - **Frictionless First-Boot Onboarding**: First-run wizard in the UI for Google OAuth `credentials.json` upload, automated model checks, and initial mailbox sync.
@@ -49,7 +49,7 @@
 - [x] **Settings & Configuration**: Centralized settings via `settings.py` for URLs, ports, context sizes (16,000), batch sizes (512), and max tokens (4,096).
 - [x] **Data Access Layer**: SQLite database schema (`emails`, `emails_content`, `sync_state`) with indexed search fields and transaction decorators.
 - [x] **Gmail Sync Engine**: OAuth2 desktop authentication, bulk message ingestion, incremental history sync via `historyId`, and on-demand body caching.
-- [x] **Model Bootstrap**: Automatic download and verification of GGUF models (`LFM2.5-8B-A1B` and `LFM2.5-2.6B`).
+- [x] **Model Bootstrap**: Automatic download and verification of GGUF models (`LFM2.5-2.6B` and `LFM2.5-1.2B-Thinking`).
 - [x] **Runtime & Hardware Auto-Detection**: Detection of NVIDIA GPUs via direct `ctypes` CUDA driver hooks (`cuInit`/`cuDeviceGetCount`) and `nvidia-smi` fallback; automated download of CUDA 13.4 or CPU `llama.cpp` releases with dynamic `-ngl -1` / `0` parameterization.
 - [x] **LLM Client & Process Management**: Background `llama-server.exe` launch, health check polling, OpenAI-compatible `/v1/chat/completions` client, latency tracking, and reasoning content handling.
 - [x] **Tool Definitions**: Implemented `search_emails` and `get_email_thread` linked directly to database and sync caching.

@@ -16,8 +16,8 @@ InboxIQ runs entirely on your local machine with automatic **GPU acceleration** 
 - 🔒 **100% Local & Private**: No data leaves your machine. No external cloud LLM tokens or API subscriptions required.
 - ⚡ **Hardware-Adaptive**: Automatically detects NVIDIA GPUs via CUDA driver hooks and offloads layers (`-ngl -1`), or falls back to multi-threaded CPU inference.
 - 🧠 **Dual-Model Architecture**:
-  - **Balanced**: `LFM2.5-8B-A1B-Q4_K_M` — Hybrid MoE model for deep multi-turn reasoning and synthesis.
-  - **Lightweight**: `LFM2.5-2.6B-Q4_K_M` — Ultra-fast, memory-efficient local model with strong native tool calling.
+  - **Balanced**: `LFM2.5-2.6B-Q4_K_M` — Efficient multi-turn reasoning and synthesis model.
+  - **Lightweight**: `LFM2.5-1.2B-Thinking-Q4_K_M` — Ultra-fast, minimal-memory model with native thinking and tool calling.
 - 🎯 **Zero-Bloat Orchestration**: Built directly on native OpenAI-compatible tool calling exposed by `llama-server`. Eliminates heavy graph frameworks (like LangGraph) and query classification layers.
 - 🔄 **Efficient Smart Sync**: Full metadata backfill with incremental sync using Gmail `historyId`. Message bodies are fetched and cached on-demand when threads are inspected, saving bandwidth and disk space.
 - 🔌 **FastAPI Backend with SSE Streaming**: Token-by-token streaming response, background sync worker with status tracking, hardware profiling, and live model toggling.
@@ -28,7 +28,7 @@ InboxIQ runs entirely on your local machine with automatic **GPU acceleration** 
 
 | Layer | Choice | Details & Rationale |
 |---|---|---|
-| **LLM Models** | **Liquid AI LFM2.5** (GGUF Q4_K_M) | `8B-A1B` (balanced, high-capacity hybrid) or `2.6B` (lightweight, rapid iteration) |
+| **LLM Models** | **Liquid AI LFM2.5** (GGUF Q4_K_M) | `2.6B` (balanced, multi-turn reasoning) or `1.2B-Thinking` (lightweight, ultra-fast with native thinking) |
 | **LLM Runtime** | **llama.cpp** (`llama-server.exe`, b11050) | Prebuilt Windows binary; supports CUDA 13.4 with full layer offload (`-ngl -1`) or CPU (`-ngl 0`); 16K context window (`-c 16000`) and 512 batch size (`-b 512`) |
 | **Configuration** | **Pydantic Settings** (`pydantic-settings`) | Type-safe settings with environment variable overrides and sensible defaults in `settings.py` |
 | **Local Store** | **SQLite** (`database.py`) | Indexes `emails` metadata and caches full thread bodies in `emails_content`, with sanitized text & HTML-entity decoding |

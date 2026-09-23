@@ -72,8 +72,8 @@ class Settings(BaseSettings):
 
     # Model
     MODEL_TYPE: Literal["balanced", "lightweight"] = "lightweight"
-    MODEL_DOWNLOAD_URL_BALANCED: str = "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF/resolve/main/LFM2.5-8B-A1B-Q4_K_M.gguf"
-    MODEL_DOWNLOAD_URL_LIGHTWEIGHT: str = "https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-Q4_K_M.gguf"
+    MODEL_DOWNLOAD_URL_BALANCED: str = "https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-Q4_K_M.gguf"
+    MODEL_DOWNLOAD_URL_LIGHTWEIGHT: str = "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-GGUF/resolve/main/LFM2.5-1.2B-Thinking-Q4_K_M.gguf"
     MODEL_STORE_DIR: str = str(USER_DATA_DIR / "models")
 
     # Llama-Cpp Server
