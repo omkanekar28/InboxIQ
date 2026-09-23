@@ -135,7 +135,7 @@ export function renderSidebar(container) {
     dot.className = "status-dot";
     if (sync.job_running) {
       dot.classList.add("amber", "pulse");
-      txt.textContent = "Running";
+      txt.textContent = sync.percent ? `${sync.percent}%` : "Running";
     } else if (sync.last_error) {
       dot.classList.add("red");
       txt.textContent = "Error";

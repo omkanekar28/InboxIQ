@@ -36,7 +36,8 @@ InboxIQ runs entirely on your local machine with automatic **GPU acceleration** 
 | **Agent Orchestration** | **Native Tool-Calling Loop** (`llm.py`) | Direct multi-turn loop via `llama-server` `/v1/chat/completions` with JSON tool schemas, dynamic date-aware system prompt, and reasoning fallback |
 | **API Layer** | **FastAPI** (`api/server.py`, `api/endpoints.py`) | Serves chat endpoints with SSE streaming (`/api/chat`), background sync (`/api/sync`), setup wizard (`/api/setup/*`), and hardware management (`/api/system/*`) |
 | **UI** | **HTML5 / CSS / ES Modules** (Modern dark theme with green accents) | Desktop-style chat interface, first-boot onboarding wizard, and interactive model toggle |
-| **Packaging** | **PyInstaller / Nuitka** (Planned) | Bundles backend, static frontend, and `llama.cpp` runtime into a native installer |
+| **Desktop Shell** | **pywebview (Edge WebView2)** | Dedicated native desktop application window with `#0A0A0A` dark theme, system tray integration, and minimize-to-tray lifecycle |
+| **Packaging** | **PyInstaller & Inno Setup** (`packaging/`) | Self-contained Windows installer (`InboxIQ-Setup.exe`) and standalone executable with uninstaller data purge option and data isolation |
 
 ---
 
@@ -50,7 +51,7 @@ Rather than using complex graph engines or artificial query classifiers, InboxIQ
                     ┌────────────────────────────────────────────────────────┐
  User query ──────► │  System Prompt Injection (`system_prompt.py`)          │
                     │  - Current dynamic date (calculates relative ranges)   │
-                    │  - Strict tool-grounding & anti-hallucination rules   │
+                    │  - Strict tool-grounding & anti-hallucination rules    │
                     │  - Heuristics for sender/keyword/thread disambiguation │
                     └──────────────────────────┬─────────────────────────────┘
                                                │
@@ -167,82 +168,138 @@ InboxIQ/
 │   ├── models/                        # [Generated] Hugging Face GGUF model files
 │   ├── llama-cpp/                     # [Generated] llama.cpp server binaries & DLLs
 │   └── logs/                          # [Generated] Application runtime & LLM output logs
-├── frontend/                          # [In Progress] React / Vite frontend
-├── packaging/                         # [Planned] PyInstaller specs & desktop bundlers
+├── frontend/                          # Modern web app (HTML/CSS/ES Modules) with reactive state & dark aesthetic
+├── packaging/                         # PyInstaller spec, Inno Setup config, icons & InboxIQ-Setup.exe
 ├── pyproject.toml                     # Build definition & dependency specifications
-├── README.md                          # Project overview & developer guide
+├── README.md                          # Project overview, simple guide & dev guide
 └── PROJECT_PLAN.md                    # Roadmap, architecture decisions & milestone tracker
 ```
 
 ---
 
-## Getting Started
+## 1. Simple Guide — Quick Start (For End Users)
+
+No Python, terminal, or developer setup required! Anyone on Windows can run InboxIQ with a single installer.
+
+> [!IMPORTANT]
+> ### ⚠️ One-Time Access Request (Google OAuth Testing Mode)
+> Because InboxIQ interacts with Google's Gmail API in **Testing Mode**, Google's security policy requires every user's Gmail address to be manually registered in the project's **Test Users** whitelist before logging in.
+> 
+> **How to request access:**
+> - 📧 **Email**: Send a quick note to **[reiji146@gmail.com](mailto:reiji146@gmail.com?subject=InboxIQ%20Access%20Request&body=Hi%20Om,%20please%20add%20my%20Gmail%20to%20the%20InboxIQ%20authorized%20test%20users%20list:%20%3CYOUR_GMAIL_ADDRESS%3E)** with your Gmail address (Subject: *InboxIQ Access Request*).
+> - 🐙 **GitHub**: Or open an issue on the [InboxIQ Issues](https://github.com/omkanekar28/InboxIQ/issues) page.
+> 
+> Once added (usually very quickly!), you can proceed with the steps below.
+
+### Step 1: Download the Installer
+Download **`InboxIQ-Setup.exe`** directly from this repository:
+- Located at [`packaging/dist-installer/InboxIQ-Setup.exe`](packaging/dist-installer/InboxIQ-Setup.exe) (or under the GitHub Releases tab).
+
+### Step 2: Install InboxIQ
+- Double-click **`InboxIQ-Setup.exe`**.
+- Follow the simple setup wizard (no administrator privileges required).
+- The installer places an **InboxIQ** shortcut on your Desktop and Start Menu.
+
+### Step 3: Launch and Connect Your Gmail
+1. Open **InboxIQ** from your Desktop shortcut or Start Menu.
+2. InboxIQ launches directly in its own dedicated, native desktop application window.
+3. The initial startup screen will display live download progress bars while setting up the local model and runtime binaries.
+4. On the setup screen:
+   - **Step 1 (Credentials)**: Pre-configured credentials are automatically detected (**Done ✓**).
+   - **Step 2 (Authentication)**: Click **"Connect Gmail Account"** to sign into your Google account and grant read-only inbox access. *(Ensure your email has been whitelisted as described above).*
+   - **Step 3 (Initial Sync)**: Click **"Start Indexing"** to sync recent email metadata into your local SQLite store (shows live count & percentage).
+   - **Step 4**: Click **"Start Chatting"**!
+
+> **Native Window & System Tray**: Clicking the window's close (`X`) button hides InboxIQ quietly to your Windows taskbar notification tray so your loaded AI model and background indexing remain instantly available without re-loading overhead. Double-click the tray icon anytime to restore the window, or right-click and select **Quit InboxIQ** to completely exit.
+> 
+> **Clean Uninstallation**: If you uninstall InboxIQ via Windows Settings or Control Panel, the uninstaller will prompt you whether you want to delete all local user data (downloaded AI models, indexed emails, credentials, and logs) or keep them.
+
+---
+
+## 2. Developer Guide — Running from Source & Building
+
+For developers and contributors who want to run the project locally, modify code, or compile their own installer.
 
 ### Prerequisites
 
-- Python 3.10+
-- An active virtual environment (e.g. `ai_venv`)
-- (Optional) NVIDIA GPU with CUDA drivers for optimal inference speed
+- Windows 10/11
+- Python 3.10+ (tested on Python 3.10 through 3.14)
+- A virtual environment (e.g. `C:\Users\Om\virtual_environments\ai_venv`)
+- (Optional) NVIDIA GPU with CUDA drivers for GPU-accelerated inference
 
-### Installation
+### 1. Environment Setup
 
-1. **Activate your virtual environment**:
+1. **Clone the repository**:
+   ```powershell
+   git clone https://github.com/omkanekar28/InboxIQ.git
+   cd InboxIQ
+   ```
+
+2. **Activate your virtual environment**:
    ```powershell
    # Windows PowerShell example
    C:\Users\Om\virtual_environments\ai_venv\Scripts\Activate.ps1
    ```
 
-2. **Install project dependencies**:
+3. **Install dependencies**:
    ```powershell
    pip install -e backend
+   pip install pyinstaller pystray pillow
    ```
 
-3. **Provide Google OAuth Credentials**:
-   - Create a Google Cloud Project with the Gmail API enabled.
-   - Configure an **OAuth 2.0 Client ID (Desktop Application)**.
-   - Download the client configuration as `credentials.json` and place it in `backend/src/credentials.json` (or upload it via the setup wizard).
+4. **OAuth Credentials**:
+   Place your Google Cloud OAuth Client credentials file at `backend/src/credentials.json` (or let the app use the bundled `packaging/credentials.json`).
 
-### Running the Backend
+### 2. Running in Development Mode
 
-Launch the backend with automatic code reloading:
+Run the backend server directly from the repository root:
 
 ```powershell
-cd backend\src
-python main.py
+python backend/src/main.py
 ```
 
-The server will automatically:
-1. Detect GPU hardware and download `llama.cpp` prebuilt binaries if needed.
-2. Verify local GGUF models.
-3. Start `llama-server.exe` in the background.
-4. Mount the FastAPI API at `http://127.0.0.1:8000`.
+**Development Features:**
+- **Auto-Reload**: Code changes in `backend/src/` automatically trigger a server reload.
+- **Live Frontend**: Static files are served directly from `frontend/`. Edits to HTML, CSS, or JS reflect immediately upon browser refresh without rebuilding anything.
+- **Hardware Profile**: Automatically detects your GPU and configures `-ngl -1` layer offloading or CPU multi-threading.
+- **Fast Startup**: Local models in `backend/models` are automatically linked to `%APPDATA%\InboxIQ\models` on first run without re-downloading.
 
-### Running Tests
+### 3. Running Automated Tests
 
-Run the full test suite:
-
-```powershell
-# From repo root
-pytest backend/tests
-```
-
-Or run specific test groups:
+Run the full pytest suite:
 
 ```powershell
 # API endpoint integration tests
-pytest backend/tests/integration/test_api_server.py
+pytest backend/tests/integration/test_api_server.py -v
 
-# Tool unit tests (isolated SQLite database)
-pytest backend/tests/agent/test_tools_isolated.py
+# Tool unit tests with isolated SQLite database
+pytest backend/tests/agent/test_tools_isolated.py -v
 
-# Live end-to-end agent queries (requires running llama-server)
-pytest backend/tests/agent/test_agent_e2e.py -s
+# Gmail sync unit tests
+pytest backend/tests/sync/test_gmail_sync.py -v
+
+# Full suite
+pytest backend/tests/ -v
 ```
+
+### 4. Building the Standalone Windows Installer
+
+To package the application into a standalone folder and compile the single-file `InboxIQ-Setup.exe` installer:
+
+```powershell
+# Requires Inno Setup 6 (winget install JRSoftware.InnoSetup)
+powershell -ExecutionPolicy Bypass -File packaging/build.ps1
+```
+
+This automated build script:
+1. Validates or generates multi-resolution application icons (`icon.ico` & `icon.png`).
+2. Bundles the backend, static frontend, and dependencies with PyInstaller (`packaging/inboxiq.spec`).
+3. Compiles the complete installer with Inno Setup into `packaging/dist-installer/InboxIQ-Setup.exe`.
 
 ---
 
 ## Security & Privacy
 
 - **Read-Only Scopes**: Only `https://www.googleapis.com/auth/gmail.readonly` is requested. InboxIQ cannot send, modify, or delete your emails.
-- **Local Persistence**: All indexed headers, snippets, cached thread bodies, and OAuth refresh tokens are stored strictly within the local `backend/data/` directory.
+- **Local Persistence**: All indexed headers, snippets, cached thread bodies, and OAuth refresh tokens are stored strictly within the user's local directory (`%APPDATA%\InboxIQ` for the installed app, or `backend/data/` in dev mode).
 - **Zero Telemetry**: No tracking, metrics, or logs are transmitted off your machine.

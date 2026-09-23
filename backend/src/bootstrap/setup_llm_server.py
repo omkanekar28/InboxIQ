@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import requests
 import zipfile
@@ -33,11 +34,13 @@ def is_gpu_available() -> bool:
         pass
 
     try:
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         res = subprocess.run(
             ["nvidia-smi"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            creationflags=flags,
         )
         return res.returncode == 0
     except Exception:
@@ -211,6 +214,7 @@ def get_gpu_info() -> dict[str, Any]:
         "vram_mb": None,
     }
     try:
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         res = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
             stdout=subprocess.PIPE,
@@ -218,6 +222,7 @@ def get_gpu_info() -> dict[str, Any]:
             text=True,
             check=False,
             timeout=5,
+            creationflags=flags,
         )
         if res.returncode == 0 and res.stdout.strip():
             line = res.stdout.strip().splitlines()[0]
@@ -261,6 +266,7 @@ def start_llama_server(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = open(log_dir / "llama_server.log", "a", encoding="utf-8")
 
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         proc = subprocess.Popen(
             [
                 llama_server_filepath,
@@ -279,6 +285,7 @@ def start_llama_server(
             ],
             stdout=log_file,
             stderr=log_file,
+            creationflags=flags,
         )
         _running_server_process = proc
         logger.info(f"Llama-cpp server started (PID: {proc.pid}).")
@@ -295,6 +302,7 @@ def stop_llama_server(
     """Stops the llama-cpp server process by PID if available, falling back to system-wide kill."""
     global _running_server_process
     target_pid = pid or (proc.pid if proc else None) or (_running_server_process.pid if _running_server_process else None)
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
         if target_pid:
             logger.info(f"Stopping llama-cpp server (PID: {target_pid})...")
@@ -303,6 +311,7 @@ def stop_llama_server(
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                creationflags=flags,
             )
         else:
             logger.info("Stopping llama-cpp server (system-wide fallback)...")
@@ -311,6 +320,7 @@ def stop_llama_server(
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                creationflags=flags,
             )
         time.sleep(0.5)
         _running_server_process = None

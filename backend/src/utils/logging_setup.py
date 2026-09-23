@@ -1,9 +1,24 @@
 import logging
+import os
+import sys
 from pathlib import Path
 
-# Always anchor default log dir to project root (InboxIQ/logs)
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_LOG_DIR = PROJECT_ROOT / "backend" / "logs"
+
+def _get_default_log_dir() -> Path:
+    if sys.platform == "win32":
+        app_data = os.environ.get("APPDATA")
+        base = Path(app_data) if app_data else Path.home() / "AppData" / "Roaming"
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME")
+        base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    log_dir = base / "InboxIQ" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+DEFAULT_LOG_DIR = _get_default_log_dir()
 
 
 def get_logger(

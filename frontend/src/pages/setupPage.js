@@ -96,17 +96,30 @@ export function renderSetupPage(container) {
               Index recent email metadata into your local SQLite store. Only headers and snippets are fetched, 
               keeping bandwidth usage negligible.
             </p>
-            <div class="sync-progress-box">
-              <span class="spinner" id="step-sync-spinner" style="width: 24px; height: 24px; border-width: 3px;"></span>
-              <div class="sync-status-details">
-                <div style="font-weight: 600; font-size: 13px;" id="step-sync-heading">Ready to sync</div>
-                <div class="mono" style="font-size: 11px; color: var(--text-secondary);" id="step-sync-sub">
-                  Total indexed: <span class="text-green" id="step-sync-count">0</span> emails
+            <div class="sync-progress-box" style="flex-direction: column; align-items: stretch; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+                <span class="spinner" id="step-sync-spinner" style="width: 24px; height: 24px; border-width: 3px;"></span>
+                <div class="sync-status-details">
+                  <div style="font-weight: 600; font-size: 13px;" id="step-sync-heading">Ready to sync</div>
+                  <div class="mono" style="font-size: 11px; color: var(--text-secondary);" id="step-sync-sub">
+                    Total indexed: <span class="text-green" id="step-sync-count">0</span> emails
+                  </div>
+                </div>
+                <button class="btn btn-primary" id="step-sync-action-btn" style="margin-left: auto;">
+                  Start Indexing
+                </button>
+              </div>
+
+              <!-- Live Progress Bar & Percentage -->
+              <div id="step-sync-bar-wrapper" style="display: none; width: 100%; padding-top: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 6px;" class="mono">
+                  <span id="step-sync-progress-text" style="color: var(--text-secondary);">Syncing emails...</span>
+                  <span id="step-sync-percent-text" style="color: var(--accent-green); font-weight: 700; font-size: 12px;">0%</span>
+                </div>
+                <div style="height: 6px; background: rgba(255, 255, 255, 0.08); border-radius: 999px; overflow: hidden; border: 1px solid rgba(0, 255, 65, 0.25);">
+                  <div id="step-sync-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00bb30, #00ff41); box-shadow: 0 0 10px rgba(0, 255, 65, 0.6); transition: width 0.3s ease;"></div>
                 </div>
               </div>
-              <button class="btn btn-primary" id="step-sync-action-btn" style="margin-left: auto;">
-                Start Indexing
-              </button>
             </div>
           </div>
         </div>
@@ -152,6 +165,11 @@ export function renderSetupPage(container) {
   const stepSyncActionBtn = container.querySelector("#step-sync-action-btn");
   const stepSyncHeading = container.querySelector("#step-sync-heading");
   const stepSyncCount = container.querySelector("#step-sync-count");
+  const stepSyncSub = container.querySelector("#step-sync-sub");
+  const stepSyncBarWrapper = container.querySelector("#step-sync-bar-wrapper");
+  const stepSyncBarFill = container.querySelector("#step-sync-bar-fill");
+  const stepSyncProgressText = container.querySelector("#step-sync-progress-text");
+  const stepSyncPercentText = container.querySelector("#step-sync-percent-text");
   const finishSetupBtn = container.querySelector("#finish-setup-btn");
 
   // Dropzone drag-and-drop
@@ -223,6 +241,7 @@ export function renderSetupPage(container) {
     try {
       stepSyncActionBtn.disabled = true;
       stepSyncHeading.textContent = "Sync in progress...";
+      if (stepSyncBarWrapper) stepSyncBarWrapper.style.display = "block";
       await api.triggerSync();
       toast.success("Initial synchronization job started.", "Sync Triggered");
       pollSyncStep();
@@ -234,25 +253,60 @@ export function renderSetupPage(container) {
 
   function pollSyncStep() {
     if (syncPollTimer) clearInterval(syncPollTimer);
+    if (stepSyncBarWrapper) stepSyncBarWrapper.style.display = "block";
+    stepSyncActionBtn.disabled = true;
+    stepSyncActionBtn.textContent = "Syncing...";
+
     syncPollTimer = setInterval(async () => {
       try {
         const syncStatus = await api.getSyncStatus();
-        stepSyncCount.textContent = (syncStatus.total_emails || 0).toLocaleString();
         store.set("sync", syncStatus);
 
-        if (!syncStatus.job_running) {
+        const current = syncStatus.current_synced || 0;
+        const total = syncStatus.total_to_sync || 0;
+        const percent = syncStatus.percent || 0.0;
+        const totalIndexed = syncStatus.total_emails || 0;
+
+        stepSyncCount.textContent = totalIndexed.toLocaleString();
+
+        if (syncStatus.job_running) {
+          if (stepSyncBarWrapper) stepSyncBarWrapper.style.display = "block";
+          stepSyncActionBtn.disabled = true;
+          stepSyncActionBtn.textContent = "Syncing...";
+
+          if (total > 0) {
+            stepSyncHeading.textContent = `Sync in progress: ${current.toLocaleString()} / ${total.toLocaleString()} emails`;
+            stepSyncSub.innerHTML = `Grabbed <span class="text-green font-bold">${current.toLocaleString()}</span> out of <span class="text-green font-bold">${total.toLocaleString()}</span> emails (<span class="text-green font-bold">${percent}%</span>)`;
+            if (stepSyncBarFill) stepSyncBarFill.style.width = `${percent}%`;
+            if (stepSyncPercentText) stepSyncPercentText.textContent = `${percent}%`;
+            if (stepSyncProgressText) stepSyncProgressText.textContent = `Fetching metadata (${current.toLocaleString()} / ${total.toLocaleString()})`;
+          } else {
+            stepSyncHeading.textContent = "Connecting to Gmail...";
+            stepSyncSub.innerHTML = `Scanning mailbox for message count...`;
+            if (stepSyncBarFill) stepSyncBarFill.style.width = `8%`;
+            if (stepSyncPercentText) stepSyncPercentText.textContent = `...`;
+            if (stepSyncProgressText) stepSyncProgressText.textContent = `Retrieving messages from Gmail...`;
+          }
+        } else {
           clearInterval(syncPollTimer);
           stepSyncActionBtn.disabled = false;
+          stepSyncActionBtn.textContent = "Start Indexing";
+
           if (syncStatus.last_error) {
             stepSyncHeading.textContent = "Sync failed: " + syncStatus.last_error;
+            if (stepSyncBarWrapper) stepSyncBarWrapper.style.display = "none";
           } else {
-            stepSyncHeading.textContent = `Completed! ${syncStatus.total_emails} emails indexed.`;
+            if (stepSyncBarFill) stepSyncBarFill.style.width = `100%`;
+            if (stepSyncPercentText) stepSyncPercentText.textContent = `100%`;
+            if (stepSyncProgressText) stepSyncProgressText.textContent = `Complete`;
+            stepSyncHeading.textContent = `Completed! ${totalIndexed.toLocaleString()} emails indexed.`;
+            stepSyncSub.innerHTML = `Grabbed <span class="text-green font-bold">${totalIndexed.toLocaleString()}</span> out of <span class="text-green font-bold">${totalIndexed.toLocaleString()}</span> emails (<span class="text-green font-bold">100%</span>)`;
             toast.success("Mailbox indexing complete!", "Sync Done");
             await checkStatus();
           }
         }
       } catch (_) {}
-    }, 2000);
+    }, 500);
   }
 
   // Finish setup button -> redirect to chat
@@ -288,6 +342,20 @@ export function renderSetupPage(container) {
     }
   }
 
+  // Allow clicking completed/active step headers to toggle expand
+  container.querySelectorAll(".step-header-row").forEach((row) => {
+    row.style.cursor = "pointer";
+    row.addEventListener("click", () => {
+      const stepNum = row.dataset.step;
+      const card = container.querySelector(`#step-${stepNum}-card`);
+      const body = container.querySelector(`#step-${stepNum}-body`);
+      if (card && body && !card.classList.contains("locked")) {
+        const isHidden = body.style.display === "none" || !body.style.display;
+        body.style.display = isHidden ? "flex" : "none";
+      }
+    });
+  });
+
   // Check setup status and advance stepper automatically
   async function checkStatus() {
     try {
@@ -308,6 +376,12 @@ export function renderSetupPage(container) {
           } else {
             setStepState(3, "active");
             setStepState(4, "locked");
+            try {
+              const syncStatus = await api.getSyncStatus();
+              if (syncStatus && syncStatus.job_running) {
+                pollSyncStep();
+              }
+            } catch (_) {}
           }
         } else {
           setStepState(2, "active");

@@ -3,6 +3,7 @@ FastAPI application entry point, lifecycle management, and CORS configuration.
 Endpoints are defined in api/endpoints.py.
 """
 
+import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -41,7 +42,11 @@ app.add_middleware(
 app.include_router(api_router)
 
 # Mount Frontend static files if present
-FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent.parent / "frontend"
+if getattr(sys, "frozen", False):
+    FRONTEND_DIR = Path(getattr(sys, "_MEIPASS", ".")) / "frontend"
+else:
+    FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent.parent / "frontend"
+
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 

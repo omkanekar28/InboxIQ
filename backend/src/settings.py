@@ -1,8 +1,28 @@
+import os
+import sys
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Literal, Optional
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
+def get_user_data_dir() -> Path:
+    """Return platform-standard writable data directory for InboxIQ."""
+    if sys.platform == "win32":
+        app_data = os.environ.get("APPDATA")
+        base = Path(app_data) if app_data else Path.home() / "AppData" / "Roaming"
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME")
+        base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    data_dir = base / "InboxIQ"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+USER_DATA_DIR = get_user_data_dir()
 
 
 class Settings(BaseSettings):
@@ -15,11 +35,11 @@ class Settings(BaseSettings):
     GMAIL_SYNC_MAX_RECENT_EMAILS: int = 1000
     GMAIL_SYNC_METADATA_HEADERS: list[str] = ["Subject", "From", "To", "Date"]
     GMAIL_SYNC_BATCH_SIZE: int = 2
-    GMAIL_SYNC_TOKEN_FILEPATH: str = str(BACKEND_DIR / "src" / "token.json")
-    GMAIL_SYNC_CREDENTIALS_FILEPATH: str = str(BACKEND_DIR / "src" / "credentials.json")
+    GMAIL_SYNC_TOKEN_FILEPATH: str = str(USER_DATA_DIR / "token.json")
+    GMAIL_SYNC_CREDENTIALS_FILEPATH: str = str(USER_DATA_DIR / "credentials.json")
 
     # Database
-    DB_STORE_DIR: str = str(BACKEND_DIR / "data")
+    DB_STORE_DIR: str = str(USER_DATA_DIR / "data")
 
     # SQLite
     DB_SQLITE_FILENAME: str = "inboxiq.db"
@@ -54,12 +74,12 @@ class Settings(BaseSettings):
     MODEL_TYPE: Literal["balanced", "lightweight"] = "lightweight"
     MODEL_DOWNLOAD_URL_BALANCED: str = "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF/resolve/main/LFM2.5-8B-A1B-Q4_K_M.gguf"
     MODEL_DOWNLOAD_URL_LIGHTWEIGHT: str = "https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-Q4_K_M.gguf"
-    MODEL_STORE_DIR: str = str(BACKEND_DIR / "models")
+    MODEL_STORE_DIR: str = str(USER_DATA_DIR / "models")
 
     # Llama-Cpp Server
     LLAMA_CPP_CPU_BINARIES_URL: str = "https://github.com/ggml-org/llama.cpp/releases/download/b11050/llama-b11050-bin-win-cpu-x64.zip"
     LLAMA_CPP_CUDA_BINARIES_URL: str = "https://github.com/ggml-org/llama.cpp/releases/download/b11050/llama-b11050-bin-win-cuda-13.4-x64.zip"
-    LLAMA_CPP_BINARIES_STORE_DIR: str = str(BACKEND_DIR / "llama-cpp")
+    LLAMA_CPP_BINARIES_STORE_DIR: str = str(USER_DATA_DIR / "llama-cpp")
     LLAMA_CPP_SERVER_PORT_NO: int = 8001
     LLAMA_CPP_SERVER_CONTEXT_WINDOW_SIZE: int = 16000
     LLAMA_CPP_SERVER_N_BATCH: int = 512
@@ -70,7 +90,7 @@ class Settings(BaseSettings):
     # API Server
     API_HOST: str = "127.0.0.1"
     API_PORT: int = 8000
-    API_RELOAD: bool = True
+    API_RELOAD: bool = not getattr(sys, "frozen", False)
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

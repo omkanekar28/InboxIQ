@@ -48,6 +48,9 @@ sync_job_state: dict[str, Any] = {
     "running": False,
     "status": "idle",
     "error": None,
+    "current_synced": 0,
+    "total_to_sync": 0,
+    "percent": 0.0,
 }
 
 # Startup progress tracking
@@ -365,6 +368,13 @@ def chat(req: ChatRequest):
 # ---------------------------------------------------------
 def _run_background_sync(job_id: str):
     global sync_job_state
+
+    def _sync_progress_callback(current: int, total: int):
+        with sync_job_lock:
+            sync_job_state["current_synced"] = current
+            sync_job_state["total_to_sync"] = total
+            sync_job_state["percent"] = round((current / total) * 100, 1) if total > 0 else 0.0
+
     try:
         logger.info(f"Starting background sync job {job_id}...")
         if not gmail_sync:
@@ -373,11 +383,15 @@ def _run_background_sync(job_id: str):
             max_recent_emails=settings.GMAIL_SYNC_MAX_RECENT_EMAILS,
             metadata_headers=settings.GMAIL_SYNC_METADATA_HEADERS,
             batch_size=settings.GMAIL_SYNC_BATCH_SIZE,
+            progress_callback=_sync_progress_callback,
         )
         with sync_job_lock:
             sync_job_state["status"] = "completed"
             sync_job_state["running"] = False
             sync_job_state["error"] = None
+            if sync_job_state["total_to_sync"] > 0:
+                sync_job_state["current_synced"] = sync_job_state["total_to_sync"]
+                sync_job_state["percent"] = 100.0
         logger.info(f"Background sync job {job_id} completed successfully.")
     except Exception as e:
         logger.error(f"Background sync job {job_id} failed: {e}")
@@ -408,6 +422,9 @@ def trigger_sync():
         sync_job_state["running"] = True
         sync_job_state["status"] = "running"
         sync_job_state["error"] = None
+        sync_job_state["current_synced"] = 0
+        sync_job_state["total_to_sync"] = 0
+        sync_job_state["percent"] = 0.0
 
     t = threading.Thread(target=_run_background_sync, args=(job_id,), daemon=True)
     t.start()
@@ -428,6 +445,9 @@ def get_sync_status():
         state = sync_job_state["status"]
         running = sync_job_state["running"]
         last_error = sync_job_state["error"]
+        current_synced = sync_job_state.get("current_synced", 0)
+        total_to_sync = sync_job_state.get("total_to_sync", 0)
+        percent = sync_job_state.get("percent", 0.0)
 
     return SyncStatusResponse(
         state=state,
@@ -435,6 +455,9 @@ def get_sync_status():
         total_emails=total_emails,
         job_running=running,
         last_error=last_error,
+        current_synced=current_synced,
+        total_to_sync=total_to_sync,
+        percent=percent,
     )
 
 
@@ -573,3 +596,16 @@ def trigger_auth():
     except Exception as e:
         logger.error(f"OAuth flow failed: {e}")
         raise HTTPException(status_code=500, detail=f"Authentication failed: {e}")
+
+
+def shutdown_services():
+    """Cleanly shut down background services and subprocesses."""
+    global llm
+    logger.info("Shutting down InboxIQ services...")
+    if llm:
+        try:
+            llm.stop()
+            logger.info("LLM server stopped cleanly.")
+        except Exception as e:
+            logger.warning(f"Error stopping LLM during shutdown: {e}")
+

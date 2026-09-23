@@ -107,10 +107,15 @@
   - [x] **Hardware Guard**: Automatically disables the `Balanced` option when `gpu_available == False`, displaying a warning notice.
   - [x] Monospace terminal-style hardware profile readout (GPU name, VRAM, and context window).
 
-### Phase 6: Packaging & Distribution (PLANNED)
-- [ ] Package backend and static frontend with PyInstaller or Nuitka.
-- [ ] Bundle prebuilt `llama-server` runtime and setup scripts into a standalone executable.
-- [ ] Create simple one-click Windows installer/launcher.
+### Phase 6: Packaging & Distribution (COMPLETED)
+- [x] Implement standard User Data Directory isolation (`%APPDATA%\InboxIQ`) for models, binaries, databases, and logs.
+- [x] Bundle pre-configured OAuth credentials with first-launch auto-population and manual override capability.
+- [x] Integrate **`pywebview` (Microsoft Edge WebView2)** to transform InboxIQ into a true native Windows desktop application window (no external browser tabs).
+- [x] Implement native window controls with `#0A0A0A` dark theme, responsive dimensions (1280x850, min 960x640), and text selection.
+- [x] Implement Windows System Tray integration (`pystray` + `Pillow`) with minimize-to-tray lifecycle on close (`X`), window restore, and clean exit.
+- [x] Package backend, static frontend, assets, webview DLLs, and dependencies with PyInstaller (`inboxiq.spec`).
+- [x] Compile standalone one-click Windows installer (`InboxIQ-Setup.exe`) using Inno Setup.
+- [x] Implement clean uninstallation hook (`[Code]` Pascal script) with interactive prompt to remove user data (`%APPDATA%\InboxIQ`: models, DB, tokens, logs).
 
 ---
 

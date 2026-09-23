@@ -26,6 +26,8 @@ venv.bak/
 # Packaging & Distribution
 build/
 dist/
+packaging/build/
+packaging/dist/
 *.egg-info/
 .eggs/
 

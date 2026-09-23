@@ -6,7 +6,7 @@ All sync related operations will be here.
 import os
 import time
 import base64
-from typing import Literal
+from typing import Literal, Optional, Callable
 from datetime import datetime, timezone
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -229,6 +229,7 @@ class GmailSync:
         message_ids: list[str],
         metadata_headers: list[str] = ["Subject", "From", "To", "Date"],
         batch_size: int = 5,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> list[dict]:
         """Fetch metadata for a list of message IDs in parallel batches.
 
@@ -240,6 +241,12 @@ class GmailSync:
 
         total = len(message_ids)
         logger.info(f"Fetching metadata for {total} messages in batches of {batch_size}...")
+
+        if progress_callback:
+            try:
+                progress_callback(0, total)
+            except Exception:
+                pass
 
         email_details: list[dict] = []
         pending_ids = list(message_ids)
@@ -280,6 +287,11 @@ class GmailSync:
                     f"Progress: {len(email_details)}/{total} emails "
                     f"({(len(email_details) / total) * 100:.0f}%) in {elapsed:.1f}s"
                 )
+                if progress_callback:
+                    try:
+                        progress_callback(len(email_details), total)
+                    except Exception:
+                        pass
                 time.sleep(0.05)  # Smooth pacing to respect per-second rate limits
 
             pending_ids = failed_ids
@@ -306,6 +318,7 @@ class GmailSync:
         max_recent_emails: int = 1000, 
         metadata_headers: list[str] = ["Subject", "From", "To", "Date"], 
         batch_size: int = 5,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> list[dict]:
         """Fetch recent emails from Gmail up to GMAIL_SYNC_MAX_RECENT_EMAILS"""
         messages = []
@@ -355,7 +368,8 @@ class GmailSync:
         return self._batch_fetch_metadata(
             message_ids=message_ids,
             metadata_headers=metadata_headers,
-            batch_size=batch_size
+            batch_size=batch_size,
+            progress_callback=progress_callback,
         )
 
     def _get_current_history_id(self) -> str | None:
@@ -525,6 +539,7 @@ class GmailSync:
         max_recent_emails: int = 3, 
         metadata_headers: list[str] = ["Subject", "From", "To", "Date"], 
         batch_size: int = 20,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> None:
         """Sync emails from Gmail to local database and update sync_state"""
         if self.service is None:
@@ -543,7 +558,8 @@ class GmailSync:
             email_details = self._fetch_all_emails(
                 max_recent_emails=max_recent_emails, 
                 metadata_headers=metadata_headers, 
-                batch_size=batch_size
+                batch_size=batch_size,
+                progress_callback=progress_callback,
             )
             logger.info("Saving emails to database...")
             self.db.ingest_emails(email_details)

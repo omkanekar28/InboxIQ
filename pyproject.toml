@@ -18,7 +18,8 @@ dependencies = [
     "tqdm>=4.70.1",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
-    "python-multipart>=0.0.12"
+    "python-multipart>=0.0.12",
+    "pywebview>=6.0.0"
 ]
 
 [tool.setuptools.packages.find]
