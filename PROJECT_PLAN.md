@@ -131,12 +131,14 @@ InboxIQ/
 │   │   │   ├── llm_utils.py           # [IMPLEMENTED] Strip thinking tags & code fence normalizer
 │   │   │   └── logging_setup.py       # [IMPLEMENTED] App-wide logging setup
 │   │   ├── api/
-│   │   │   ├── .gitkeep
-│   │   │   └── server.py              # [PLANNED] FastAPI backend (chat, sync, setup, system/models)
+│   │   │   ├── __init__.py            # [IMPLEMENTED] API package exports
+│   │   │   ├── server.py              # [IMPLEMENTED] FastAPI app setup, lifespan & CORS
+│   │   │   ├── endpoints.py           # [IMPLEMENTED] All API endpoints (chat, sync, setup, system/models)
+│   │   │   └── models/                # [IMPLEMENTED] Pydantic request & response models
 │   │   ├── setup_wizard/              # First-run onboarding helpers & status verifier
 │   │   ├── eval/                      # Extended benchmark query definitions
 │   │   ├── settings.py                # [IMPLEMENTED] Central Pydantic BaseSettings
-│   │   └── main.py                    # [IN PROGRESS] Top-level application entry point
+│   │   └── main.py                    # [IMPLEMENTED] Top-level application entry point with uvicorn
 │   ├── scripts/
 │   │   └── sqlite_summary.py          # [IMPLEMENTED] Developer utility to inspect DB table counts & schema
 │   ├── tests/
@@ -211,20 +213,21 @@ def get_email_thread(
   4. Negative Case / Anti-Hallucination (*"Did I get any receipts or ride summaries from Uber this month?"*) &rarr; PASS
   5. Count / Aggregation over Date Window (*"How many GitHub notifications have I received in the past 7 days?"*) &rarr; PASS
 
-### Phase 4: Local Server & API (NEXT UP)
-- [ ] **FastAPI Application (`api/server.py`)**:
-  - `POST /api/chat`: Accepts conversation messages and returns the synthesized response, tools called, and latency.
-  - `POST /api/sync`: Triggers background incremental or full Gmail sync.
-  - `GET /api/sync/status`: Reports sync state, timestamp of last sync, and total indexed emails.
-  - `GET /api/system/hardware`: Returns hardware profile (GPU availability, device name, VRAM, and active model).
-  - `POST /api/system/model`: Dynamically toggles active model between `lightweight` (`2.6B`) and `balanced` (`8B`). Rejects `balanced` if no GPU is available.
+### Phase 4: Local Server & API (COMPLETED)
+- [x] **FastAPI Application (`api/server.py` & `api/endpoints.py`)**:
+  - `POST /api/chat`: Accepts conversation messages with SSE streaming support (`stream=True`) or standard JSON, returning synthesized response, tool executions, and latency.
+  - `POST /api/sync`: Triggers background incremental or full Gmail sync via worker threads with job tracking.
+  - `GET /api/sync/status`: Reports sync state, timestamp of last sync, total indexed emails, and live job status.
+  - `GET /api/system/hardware`: Returns hardware profile (GPU availability, device name, VRAM, and active model) via `nvidia-smi` hooks.
+  - `POST /api/system/model`: Dynamically toggles active model between `lightweight` (`2.6B`) and `balanced` (`8B`) with process PID tracking; rejects `balanced` if no GPU is available.
   - `GET /api/setup/status`: Checks if `credentials.json` exists, user is authenticated (`token.json`), models are downloaded, and initial sync is completed.
-  - `POST /api/setup/credentials`: Accepts uploaded `credentials.json` or writes file directly.
-  - `POST /api/setup/auth`: Triggers the Google OAuth browser consent flow.
-  - `GET /api/health`: Basic uptime and server readiness check.
-- [ ] **CORS Configuration**: Enable local origin access for the Vite/React dev server (`http://localhost:5173`).
+  - `POST /api/setup/credentials`: Accepts uploaded `credentials.json` (multipart or JSON body) and validates schema.
+  - `POST /api/setup/auth`: Triggers the Google OAuth browser consent flow and binds active session.
+  - `GET /api/health`: Server uptime, model readiness, and active model check.
+- [x] **CORS Configuration**: Enabled local origin access for Vite/React dev server (`http://localhost:5173`).
+- [x] **Integration Testing**: 7 integration tests in `backend/tests/integration/test_api_server.py` verifying all routes, mock LLM streaming, and validation.
 
-### Phase 5: Frontend & User Onboarding
+### Phase 5: Frontend & User Onboarding (NEXT UP)
 - [ ] **First-Boot Setup Screen (Onboarding Wizard)**:
   - Automatically displayed on first run if `/api/setup/status` indicates unconfigured state.
   - **Step 1: Credentials Upload**: Drag-and-drop or file selector for `credentials.json`, accompanied by step-by-step instructions for Google Cloud Console OAuth setup.

@@ -5,7 +5,9 @@ LLM - thin wrapper around a local llama-cpp server.
 import time
 import requests
 import json
+import re
 import logging
+import subprocess
 from pathlib import Path
 from typing import Optional
 from settings import settings
@@ -55,6 +57,15 @@ class LLM:
         self._server_startup_timeout: int = server_startup_timeout
         self._ready: bool = False
         self._has_gpu: bool = is_gpu_available()
+        self._process: Optional[subprocess.Popen] = None
+
+    @property
+    def model_type(self) -> str:
+        return self._model_type
+
+    @property
+    def is_ready(self) -> bool:
+        return self._ready
 
     def setup(self) -> None:
         """Download both GGUF models and install the llama-cpp runtime."""
@@ -88,17 +99,18 @@ class LLM:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.stop()
 
-    def start(self) -> None:
+    def start(self, force_restart: bool = False) -> None:
         """Launch the llama-cpp server and block until it is healthy."""
-        # Check if server is already running and healthy
-        try:
-            resp = requests.get(f"{self._base_url}/health", timeout=1)
-            if resp.status_code == 200:
-                logger.info("llama-cpp server is already running and healthy.")
-                self._ready = True
-                return
-        except requests.exceptions.RequestException:
-            pass
+        if not force_restart:
+            # Check if server is already running and healthy
+            try:
+                resp = requests.get(f"{self._base_url}/health", timeout=1)
+                if resp.status_code == 200:
+                    logger.info("llama-cpp server is already running and healthy.")
+                    self._ready = True
+                    return
+            except requests.exceptions.RequestException:
+                pass
 
         model_filename = _MODEL_FILENAME[self._model_type]
         model_filepath = str(Path(settings.MODEL_STORE_DIR) / model_filename)
@@ -120,7 +132,7 @@ class LLM:
             n_gpu_layers,
         )
 
-        start_llama_server(
+        self._process = start_llama_server(
             llama_server_filepath=llama_server_filepath,
             model_filepath=model_filepath,
             port=self._port,
@@ -135,7 +147,35 @@ class LLM:
     def stop(self) -> None:
         """Terminate the llama-cpp server process."""
         self._ready = False
-        stop_llama_server()
+        stop_llama_server(proc=self._process)
+        self._process = None
+
+    def switch_model(self, new_model_type: str) -> None:
+        """
+        Dynamically toggle active model between 'lightweight' and 'balanced'.
+        Rejects 'balanced' if no GPU is available.
+        """
+        if new_model_type not in ("lightweight", "balanced"):
+            raise ValueError(
+                f"model_type must be 'lightweight' or 'balanced', got {new_model_type!r}"
+            )
+
+        if new_model_type == "balanced" and not self._has_gpu:
+            raise ValueError(
+                "Balanced (8B) model requires an NVIDIA GPU for responsive performance."
+            )
+
+        if self._ready and self._model_type == new_model_type:
+            logger.info("Model %s is already active.", new_model_type)
+            return
+
+        logger.info(
+            "Switching model from %s to %s...", self._model_type, new_model_type
+        )
+        self.stop()
+        self._model_type = new_model_type
+        self.start(force_restart=True)
+        logger.info("Switched model to %s successfully.", new_model_type)
 
     def chat(
         self,
@@ -192,7 +232,7 @@ class LLM:
         llm_output_logger.debug(f"Final response: \n{content}")
         return content
 
-    def chat_with_tools(
+    def chat_with_tools_details(
         self,
         messages: list[dict],
         *,
@@ -200,17 +240,24 @@ class LLM:
         temperature: float = 0.7,
         stop: Optional[list[str]] = None,
         tools: Optional[list[dict]] = None,
-    ) -> str:
-
+    ) -> dict:
+        """
+        Executes multi-turn tool-calling loop and returns a dict:
+        {
+            "reply": str,
+            "tools_called": list[dict],
+            "latency_seconds": float
+        }
+        """
         self._assert_ready()
 
         messages = list(messages)
         tools = tools or TOOLS
+        tools_called: list[dict] = []
 
         agent_run_start_time = time.time()
 
         while True:
-
             payload = {
                 "messages": messages,
                 "max_tokens": max_tokens,
@@ -222,7 +269,6 @@ class LLM:
                 payload["stop"] = stop
 
             inference_start_time = time.time()
-
             llm_output_logger.debug(f"Input messages: \n{json.dumps(messages, indent=4)}")
 
             response = requests.post(
@@ -237,7 +283,9 @@ class LLM:
             )
 
             if not response.ok:
-                logger.error(f"llama-cpp server returned error [{response.status_code}]: {response.text}")
+                logger.error(
+                    f"llama-cpp server returned error [{response.status_code}]: {response.text}"
+                )
             response.raise_for_status()
 
             data = response.json()
@@ -252,24 +300,26 @@ class LLM:
 
             # No tool call → final answer
             if not message.get("tool_calls"):
-                logger.info(f"Agent total run time: "
-                            f"{time.time() - agent_run_start_time:.2f} seconds")
+                latency_seconds = round(time.time() - agent_run_start_time, 2)
+                logger.info(f"Agent total run time: {latency_seconds:.2f} seconds")
                 content = message.get("content") or ""
                 if not content and message.get("reasoning_content"):
                     logger.warning("Assistant response content was empty; falling back to reasoning_content")
                     content = message["reasoning_content"]
                 final_response = skip_thinking_part_response(content)
                 llm_output_logger.debug(f"Final response: \n{final_response}")
-                return final_response
+                return {
+                    "reply": final_response,
+                    "tools_called": tools_called,
+                    "latency_seconds": latency_seconds,
+                }
 
             # Add assistant message containing tool call
             messages.append(message)
 
             # Execute requested tools
             for tool_call in message["tool_calls"]:
-
                 function_name = tool_call["function"]["name"]
-
                 raw_args = tool_call["function"]["arguments"]
                 arguments = (
                     json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
@@ -280,9 +330,140 @@ class LLM:
                         f"Unknown tool requested: {function_name}"
                     )
 
-                function = TOOL_FUNCTIONS[function_name]
+                tools_called.append({
+                    "name": function_name,
+                    "arguments": arguments,
+                })
 
+                function = TOOL_FUNCTIONS[function_name]
                 result = function(**arguments)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.get("id", ""),
+                    "content": json.dumps(result),
+                })
+
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int = settings.LLM_MAX_TOKENS,
+        temperature: float = 0.7,
+        stop: Optional[list[str]] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> str:
+        """Backward-compatible method returning only the final answer string."""
+        res = self.chat_with_tools_details(
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop,
+            tools=tools,
+        )
+        return res["reply"]
+
+    def chat_with_tools_stream(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int = settings.LLM_MAX_TOKENS,
+        temperature: float = 0.7,
+        stop: Optional[list[str]] = None,
+        tools: Optional[list[dict]] = None,
+    ):
+        """
+        Yields generator event dicts during tool execution and response streaming:
+        - {"event": "tool_call", "data": {"name": ..., "arguments": ...}}
+        - {"event": "tool_result", "data": {"name": ..., "count": ...}}
+        - {"event": "token", "data": {"text": ...}}
+        - {"event": "done", "data": {"reply": ..., "tools_called": ..., "latency_seconds": ...}}
+        """
+        self._assert_ready()
+
+        messages = list(messages)
+        tools = tools or TOOLS
+        tools_called: list[dict] = []
+        agent_run_start_time = time.time()
+
+        while True:
+            payload = {
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "tools": tools,
+            }
+
+            if stop:
+                payload["stop"] = stop
+
+            response = requests.post(
+                f"{self._base_url}/v1/chat/completions",
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            data = response.json()
+            message = data["choices"][0]["message"]
+
+            if not message.get("tool_calls"):
+                latency_seconds = round(time.time() - agent_run_start_time, 2)
+                content = message.get("content") or ""
+                if not content and message.get("reasoning_content"):
+                    content = message["reasoning_content"]
+                final_response = skip_thinking_part_response(content)
+
+                words = re.findall(r"\S+|\s+", final_response)
+                for w in words:
+                    yield {"event": "token", "data": {"text": w}}
+                    time.sleep(0.01)
+
+                yield {
+                    "event": "done",
+                    "data": {
+                        "reply": final_response,
+                        "tools_called": tools_called,
+                        "latency_seconds": latency_seconds,
+                    },
+                }
+                return
+
+            messages.append(message)
+
+            for tool_call in message["tool_calls"]:
+                function_name = tool_call["function"]["name"]
+                raw_args = tool_call["function"]["arguments"]
+                arguments = (
+                    json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                )
+
+                if function_name not in TOOL_FUNCTIONS:
+                    raise ValueError(f"Unknown tool requested: {function_name}")
+
+                tools_called.append({
+                    "name": function_name,
+                    "arguments": arguments,
+                })
+
+                yield {
+                    "event": "tool_call",
+                    "data": {
+                        "name": function_name,
+                        "arguments": arguments,
+                    },
+                }
+
+                function = TOOL_FUNCTIONS[function_name]
+                result = function(**arguments)
+
+                count = len(result) if isinstance(result, list) else 1
+                yield {
+                    "event": "tool_result",
+                    "data": {
+                        "name": function_name,
+                        "count": count,
+                    },
+                }
 
                 messages.append({
                     "role": "tool",

@@ -53,7 +53,7 @@ class Database:
         db_path = os.path.join(store_dir, sqlite_filename)
 
         db_exists = os.path.exists(db_path)
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
 
         # Only create tables on first boot
@@ -292,6 +292,12 @@ class Database:
                 item["snippet"] = cleaned
             results.append(item)
         return results
+
+    def get_total_emails(self) -> int:
+        """Returns the total number of indexed emails in the database."""
+        self.cursor.execute("SELECT COUNT(*) FROM emails")
+        row = self.cursor.fetchone()
+        return row[0] if row else 0
 
 
 # FOR DEBUGGING

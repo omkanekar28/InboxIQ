@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     GMAIL_SYNC_MAX_RECENT_EMAILS: int = 1000
     GMAIL_SYNC_METADATA_HEADERS: list[str] = ["Subject", "From", "To", "Date"]
     GMAIL_SYNC_BATCH_SIZE: int = 2
-    GMAIL_SYNC_TOKEN_FILEPATH: str = "token.json"
-    GMAIL_SYNC_CREDENTIALS_FILEPATH: str = "credentials.json"
+    GMAIL_SYNC_TOKEN_FILEPATH: str = str(BACKEND_DIR / "src" / "token.json")
+    GMAIL_SYNC_CREDENTIALS_FILEPATH: str = str(BACKEND_DIR / "src" / "credentials.json")
 
     # Database
     DB_STORE_DIR: str = str(BACKEND_DIR / "data")
@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     LLAMA_CPP_SERVER_N_THREADS: int = 4
     LLAMA_CPP_SERVER_N_GPU_LAYERS: Optional[int] = None
     LLM_MAX_TOKENS: int = 4096
+
+    # API Server
+    API_HOST: str = "127.0.0.1"
+    API_PORT: int = 8000
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
 
 settings = Settings()

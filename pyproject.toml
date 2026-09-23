@@ -15,7 +15,10 @@ dependencies = [
     "google-auth-oauthlib>=1.4.1",
     "db-sqlite3>=0.0.1", 
     "python-dateutil>=2.9.0.post0", 
-    "tqdm>=4.70.1"
+    "tqdm>=4.70.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.12"
 ]
 
 [tool.setuptools.packages.find]

@@ -14,6 +14,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from storage import Database
+from settings import settings
 from utils import get_logger
 
 logger = get_logger(name=__name__)
@@ -21,17 +22,76 @@ logger = get_logger(name=__name__)
 
 class GmailSync:
     """Sync emails from Gmail to local database"""
-    def __init__(self, db: Database):
-        self.service = self._get_gmail_service()
+    def __init__(
+        self,
+        db: Database,
+        token_filepath: str | None = None,
+        credentials_filepath: str | None = None,
+        scopes: list[str] | None = None,
+        auto_auth: bool = True,
+    ):
         self.db = db
+        self.token_filepath = token_filepath or settings.GMAIL_SYNC_TOKEN_FILEPATH
+        self.credentials_filepath = credentials_filepath or settings.GMAIL_SYNC_CREDENTIALS_FILEPATH
+        self.scopes = scopes or settings.GMAIL_SYNC_SCOPES
+        self.service = None
+        if auto_auth:
+            self._try_init_service()
+
+    def _try_init_service(self) -> None:
+        """Attempts to load existing token silently without launching browser OAuth."""
+        if os.path.exists(self.token_filepath):
+            try:
+                creds = Credentials.from_authorized_user_file(self.token_filepath, self.scopes)
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                    with open(self.token_filepath, "w") as token:
+                        token.write(creds.to_json())
+                if creds and creds.valid:
+                    self.service = build("gmail", "v1", credentials=creds)
+                    logger.info("Gmail service initialized from existing token.")
+                    return
+            except Exception as e:
+                logger.warning(f"Could not load existing credentials: {e}")
+        logger.info("No active Gmail service session. Authentication needed.")
+
+    def authenticate_flow(self) -> bool:
+        """Run interactive OAuth consent flow in browser and save token."""
+        if not os.path.exists(self.credentials_filepath):
+            raise FileNotFoundError(f"Credentials file not found at {self.credentials_filepath}")
+        flow = InstalledAppFlow.from_client_secrets_file(
+            self.credentials_filepath, self.scopes
+        )
+        creds = flow.run_local_server(port=0)
+        with open(self.token_filepath, "w") as token:
+            token.write(creds.to_json())
+        self.service = build("gmail", "v1", credentials=creds)
+        logger.info("Authentication successful via OAuth flow.")
+        return True
+
+    def is_authenticated(self) -> bool:
+        """Check if a valid or refreshable token is present."""
+        if self.service is not None:
+            return True
+        if not os.path.exists(self.token_filepath):
+            return False
+        try:
+            creds = Credentials.from_authorized_user_file(self.token_filepath, self.scopes)
+            return bool(creds and (creds.valid or creds.refresh_token))
+        except Exception:
+            return False
 
     def _get_gmail_service(
         self, 
-        scopes: list[str] = ["https://www.googleapis.com/auth/gmail.readonly"], 
-        token_filepath: str = "token.json", 
-        credentials_filepath: str = "credentials.json"
+        scopes: list[str] | None = None, 
+        token_filepath: str | None = None, 
+        credentials_filepath: str | None = None,
     ):
         """Authenticates the user and returns the Gmail service object"""
+        scopes = scopes or self.scopes
+        token_filepath = token_filepath or self.token_filepath
+        credentials_filepath = credentials_filepath or self.credentials_filepath
+
         logger.info("Authenticating user...")
         creds = None
         if os.path.exists(token_filepath):
@@ -127,6 +187,8 @@ class GmailSync:
         metadata_headers: list[str] | None = ["Subject", "From", "To", "Date"],
     ) -> dict:
         """Fetch and parse message details for a single message ID"""
+        if self.service is None:
+            self.service = self._get_gmail_service()
         if format == "metadata":
             message = (
                 self.service.users()
@@ -465,6 +527,8 @@ class GmailSync:
         batch_size: int = 20,
     ) -> None:
         """Sync emails from Gmail to local database and update sync_state"""
+        if self.service is None:
+            self.service = self._get_gmail_service()
         last_history_id = self.db.get_sync_state("gmail_last_history_id")
 
         if last_history_id is None:

@@ -169,6 +169,48 @@ def install_llama_runtime(
         raise
 
 
+def get_gpu_info() -> dict[str, Any]:
+    """
+    Get detailed GPU information (name, VRAM in MB) using nvidia-smi.
+    Falls back gracefully if nvidia-smi is unavailable or no GPU exists.
+    """
+    info: dict[str, Any] = {
+        "gpu_available": False,
+        "gpu_name": None,
+        "vram_mb": None,
+    }
+    try:
+        res = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            line = res.stdout.strip().splitlines()[0]
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 2:
+                info["gpu_available"] = True
+                info["gpu_name"] = parts[0]
+                try:
+                    info["vram_mb"] = int(float(parts[1]))
+                except ValueError:
+                    info["vram_mb"] = None
+                return info
+    except Exception as e:
+        logger.debug(f"Failed to query nvidia-smi for GPU details: {e}")
+
+    if is_gpu_available():
+        info["gpu_available"] = True
+
+    return info
+
+
+_running_server_process: Optional[subprocess.Popen] = None
+
+
 def start_llama_server(
     llama_server_filepath: str,
     model_filepath: str,
@@ -177,8 +219,9 @@ def start_llama_server(
     n_batch: int = 512,
     n_threads: int = 4,
     n_gpu_layers: int = 0,
-) -> None:
+) -> subprocess.Popen:
     """Starts the llama-cpp server with the given model and port."""
+    global _running_server_process
     try:
         logger.info(
             "Starting llama-cpp server (n_gpu_layers=%d)...", n_gpu_layers
@@ -187,7 +230,7 @@ def start_llama_server(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = open(log_dir / "llama_server.log", "a", encoding="utf-8")
 
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [
                 llama_server_filepath,
                 "-m",
@@ -206,23 +249,40 @@ def start_llama_server(
             stdout=log_file,
             stderr=log_file,
         )
-        logger.info("Llama-cpp server started.")
+        _running_server_process = proc
+        logger.info(f"Llama-cpp server started (PID: {proc.pid}).")
+        return proc
     except Exception as e:
         logger.error(f"Failed to start llama-cpp server: {e}")
         raise
 
 
-def stop_llama_server():
+def stop_llama_server(
+    proc: Optional[subprocess.Popen] = None,
+    pid: Optional[int] = None,
+) -> None:
+    """Stops the llama-cpp server process by PID if available, falling back to system-wide kill."""
+    global _running_server_process
+    target_pid = pid or (proc.pid if proc else None) or (_running_server_process.pid if _running_server_process else None)
     try:
-        logger.info("Stopping llama-cpp server...")
-
-        subprocess.run(
-            ["cmd.exe", "/c", "taskkill", "/F", "/IM", "llama-server.exe"],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        if target_pid:
+            logger.info(f"Stopping llama-cpp server (PID: {target_pid})...")
+            subprocess.run(
+                ["cmd.exe", "/c", "taskkill", "/F", "/PID", str(target_pid)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            logger.info("Stopping llama-cpp server (system-wide fallback)...")
+            subprocess.run(
+                ["cmd.exe", "/c", "taskkill", "/F", "/IM", "llama-server.exe"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         time.sleep(0.5)
+        _running_server_process = None
         logger.info("Llama-cpp server stopped.")
 
     except Exception as e:
