@@ -5,6 +5,15 @@
 
 ---
 
+## 🎬 Demo
+
+[![Watch Demo](https://img.shields.io/badge/▶_Watch_Demo-InboxIQ_in_Action_(1m15s)-00C853?style=for-the-badge&logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1mkMdFRH8Qs5mlSxUl6FlFZ1ffE_-iKjs/view?usp=sharing)
+
+> 🎥 **[Watch the 1m 15s Video Demo on Google Drive](https://drive.google.com/file/d/1mkMdFRH8Qs5mlSxUl6FlFZ1ffE_-iKjs/view?usp=sharing)**  
+> See InboxIQ in action: local email indexing, natural-language query grounding with `llama-server` native tool calling, and token-by-token streaming with zero cloud dependencies.
+
+---
+
 ## Overview
 
 InboxIQ runs entirely on your local machine with automatic **GPU acceleration** (NVIDIA CUDA) and seamless **CPU fallback**. It indexes email metadata into a local SQLite database, communicates with Gmail using read-only OAuth2 scopes, and uses a native tool-calling agent loop via `llama-server.exe` to answer queries with deterministic, hallucination-free grounding.
